@@ -4,7 +4,7 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
-    "types": ["vite/client"]
+    "types": ["vite/client", "w3c-web-usb"]
   },
-  "include": ["src/app", "src/shared"]
+  "include": ["src/app", "src/shared", "src/spikes"]
 }

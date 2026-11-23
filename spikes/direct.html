@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Push 3 — browser-only spike</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font: 14px/1.45 -apple-system, system-ui, sans-serif; background: #0b0d11; color: #e7ebf0; margin: 0; padding: 20px; max-width: 1100px; }
+    h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 15px; margin: 22px 0 8px; color: #46d7ff; }
+    p { color: #aab3be; margin: 4px 0 10px; }
+    button { font: inherit; color: #e7ebf0; background: #181c24; border: 1px solid #2a303c; border-radius: 8px; padding: 6px 12px; cursor: pointer; margin: 0 6px 6px 0; }
+    button:hover { border-color: #46536a; }
+    .row { display: flex; flex-wrap: wrap; align-items: center; }
+    canvas { width: 100%; max-width: 960px; image-rendering: pixelated; border: 1px solid #2a303c; border-radius: 6px; background: #000; }
+    pre { background: #0f1218; border: 1px solid #232833; border-radius: 8px; padding: 10px; font: 12px/1.4 Menlo, monospace; overflow: auto; max-height: 320px; }
+    .ok { color: #3ddc84; } .bad { color: #ff7a6b; }
+  </style>
+</head>
+<body>
+  <h1>Push 3 — browser-only spike</h1>
+  <p>Talks to the Push with <b>Web MIDI</b> (pads, LEDs) and <b>WebUSB</b> (screen) — no Node bridge. Stop the bridge and quit Ableton Live first.</p>
+
+  <h2>1 · Web MIDI</h2>
+  <div class="row">
+    <button id="midi-connect">Connect MIDI (asks for permission)</button>
+    <button id="midi-stress">LED stress test (5 s)</button>
+    <span id="midi-rate"></span>
+  </div>
+
+  <h2>2 · WebUSB screen — main thread</h2>
+  <div class="row">
+    <button id="usb-connect">Connect screen (pick “Ableton Push 3”)</button>
+    <button id="bench-single">Benchmark: 1 transfer/frame (5 s)</button>
+    <button id="bench-chunked">Benchmark: 16 KB chunks (5 s)</button>
+    <button id="usb-release">Release</button>
+  </div>
+
+  <h2>3 · WebUSB screen — in a Web Worker (background-tab test)</h2>
+  <div class="row">
+    <button id="worker-start">Start worker pump</button>
+    <button id="worker-stop">Stop worker</button>
+    <span id="worker-rate"></span>
+  </div>
+
+  <h2>Preview (what is sent to the Push)</h2>
+  <canvas id="screen" width="960" height="160"></canvas>
+
+  <h2>Results</h2>
+  <pre id="results">{}</pre>
+  <h2>Log</h2>
+  <pre id="log"></pre>
+  <script type="module" src="/src/spikes/direct.ts"></script>
+</body>
+</html>
