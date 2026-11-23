@@ -1,5 +1,5 @@
 // PushLink straight from the browser: Web MIDI for pads/knobs/LEDs, WebUSB (in a worker)
-// for the screen. No install — Chrome/Edge only. Permissions are asked once (a click on
+// for the screen. No install; Chrome/Edge only. Permissions are asked once (a click on
 // "Connect"), then remembered per site, so later visits reconnect automatically.
 import { Effect, Layer, PubSub, Stream, SubscriptionRef } from 'effect';
 import { USB_PRODUCT_ID, USB_VENDOR_ID, type Bytes } from '../../shared/push.ts';

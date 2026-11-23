@@ -1,6 +1,6 @@
 // How the app reaches the Push. One interface, two Layers:
-//   BridgeLink — WebSocket to the local Node bridge (works in any browser)
-//   DirectLink — Web MIDI + WebUSB straight from the page (Chrome/Edge, no install)
+//   BridgeLink: WebSocket to the local Node bridge (works in any browser)
+//   DirectLink: Web MIDI + WebUSB straight from the page (Chrome/Edge, no install)
 // The engine only ever sees this service, so swapping the Layer swaps the transport.
 import { Context, type Stream, type SubscriptionRef } from 'effect';
 import type { Bytes } from '../../shared/push.ts';

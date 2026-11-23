@@ -19,7 +19,7 @@ live.sendMessage(Cmd.identityRequest());
 live.sendMessage(Cmd.midiMode('user'));
 setTimeout(() => {
   for (let i = 0; i < 64; i++) user.sendMessage([0x90, 36 + i, 1 + ((i * 2) % 126)]);
-  console.log('Pads painted. Listening for 20 s — press pads, turn knobs…');
+  console.log('Pads painted. Listening for 20 s: press pads, turn knobs…');
 }, 300);
 setTimeout(() => {
   for (let i = 0; i < 64; i++) user.sendMessage([0x90, 36 + i, 0]);

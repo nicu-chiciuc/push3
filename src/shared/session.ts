@@ -1,4 +1,4 @@
-// What we send when we take the Push over and when we hand it back — shared by the Node
+// What we send when we take the Push over and when we hand it back, shared by the Node
 // bridge and the browser-only (Web MIDI) link so both leave the device in the same state.
 import { Cmd, STRIP_PUSH_DRAWS, type Bytes } from './push.ts';
 import type { MidiPort } from './wire.ts';

@@ -1,7 +1,7 @@
 // Physical layout of the Push 3 and the MIDI numbers each control uses.
 // Positions are pixels traced from Ableton's top-down product photo (1400×1170 crop);
 // MIDI numbers come from Ableton's Push 2 interface spec plus community Push 3 notes.
-// If a control turns out to send something else, fix it here — everything else follows.
+// If a control turns out to send something else, fix it here and everything else follows.
 
 export const DEVICE = { x0: 25, y0: 20, x1: 1365, y1: 1140 };
 export const CENTER = { x: (DEVICE.x0 + DEVICE.x1) / 2, y: (DEVICE.y0 + DEVICE.y1) / 2 };
@@ -55,7 +55,7 @@ export const BUTTONS: ReadonlyArray<ButtonSpec> = [
   B('stop', 'Stop Clip', 29, 122, 435, 40, 34, { rgb: true, text: '■' }),
   B('mute', 'Mute', 60, 172, 435, 40, 34, { rgb: true, text: 'M' }),
   B('solo', 'Solo', 61, 222, 435, 40, 34, { rgb: true, text: 'S' }),
-  B('master', 'Master', 28, 1152, 427, 44, 34, { text: '—' }),
+  B('master', 'Master', 28, 1152, 427, 44, 34, { text: '–' }),
   // left column
   B('tapTempo', 'Tap Tempo', 3, 95, 597, 92, 52, { text: 'Tap\nTempo' }),
   B('metronome', 'Metronome', 9, 95, 646, 92, 40, { text: '◔◕' }),

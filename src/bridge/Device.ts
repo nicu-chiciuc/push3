@@ -175,7 +175,7 @@ function makeDevice() {
 
     let lastError = '';
     yield* session.pipe(
-      Effect.tapError((e) => (e.what === lastError ? Effect.void : Effect.logInfo(`Waiting for the Push: ${(lastError = e.what)} not found — plug it in and quit Ableton Live`))),
+      Effect.tapError((e) => (e.what === lastError ? Effect.void : Effect.logInfo(`Waiting for the Push: ${(lastError = e.what)} not found. Plug it in and quit Ableton Live`))),
       Effect.retry(Schedule.spaced('2 seconds')),
       Effect.andThen(Effect.sync(() => { lastError = ''; })),
       Effect.forever,

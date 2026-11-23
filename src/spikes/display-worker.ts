@@ -24,7 +24,7 @@ async function open() {
   try {
     const devices = await navigator.usb.getDevices();
     device = devices.find((d) => d.vendorId === USB_VENDOR_ID && d.productId === USB_PRODUCT_ID) ?? null;
-    if (!device) return post({ type: 'error', message: 'no permitted Push 3 — connect it on the main page first (section 2)' });
+    if (!device) return post({ type: 'error', message: 'no permitted Push 3: connect it on the main page first (section 2)' });
     await device.open();
     if (device.configuration === null) await device.selectConfiguration(1);
     await device.claimInterface(DISPLAY_INTERFACE);

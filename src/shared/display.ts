@@ -1,5 +1,5 @@
 // Push display wire format (Ableton Push 2 manual, unchanged on Push 3): a 16-byte header,
-// then 160 lines of 960 RGB565 pixels padded to 2048 bytes, XOR-masked. Pure — runs in
+// then 160 lines of 960 RGB565 pixels padded to 2048 bytes, XOR-masked. Pure: runs in
 // Node (bridge) and in the browser (WebUSB) alike.
 import { DISPLAY_HEIGHT as H, DISPLAY_WIDTH as W } from './push.ts';
 

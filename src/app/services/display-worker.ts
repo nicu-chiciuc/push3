@@ -2,7 +2,7 @@
 // - Sends each new frame once: header as its own transfer, then all 327,680 pixel bytes in one
 //   transfer (measured 60 fps on macOS vs 53 fps with 16 KB chunks).
 // - Keep-alive: re-sends the last frame every 250 ms when nothing new arrives (hidden tab, idle
-//   screen) — the display blanks after 2 s. Worker timers aren't throttled in hidden tabs.
+//   screen), because the display blanks after 2 s. Worker timers aren't throttled in hidden tabs.
 // - Every transfer has a deadline; a stalled or failed transfer closes, reopens and re-claims.
 // - If the screen is busy (Ableton Live, the Node bridge or another tab holds it), retries.
 import { USB_PRODUCT_ID, USB_VENDOR_ID } from '../../shared/push.ts';
@@ -34,7 +34,7 @@ async function open() {
   const gen = ++generation;
   try {
     const d = (await navigator.usb.getDevices()).find(isPush);
-    if (!d) return post({ type: 'closed', reason: 'not permitted yet — click Connect Push', retrying: false });
+    if (!d) return post({ type: 'closed', reason: 'not permitted yet: click Connect Push', retrying: false });
     await d.open();
     if (d.configuration === null) await d.selectConfiguration(1); // never on Windows: there it's already set
     await d.claimInterface(DISPLAY_INTERFACE);

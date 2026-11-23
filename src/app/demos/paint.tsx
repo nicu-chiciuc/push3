@@ -80,7 +80,7 @@ export const paint: Demo = {
     g.beginPath();
     g.roundRect(380, 14, 200, 70, 12);
     g.fill();
-    text(g, ui.erase ? 'ERASER' : ui.pick ? 'EYEDROPPER — tap a pad' : 'BRUSH', 480, 49, { size: 13, weight: 800, color: ui.brush.v > 0.5 ? '#000' : '#fff' });
+    text(g, ui.erase ? 'ERASER' : ui.pick ? 'EYEDROPPER: tap a pad' : 'BRUSH', 480, 49, { size: 13, weight: 800, color: ui.brush.v > 0.5 ? '#000' : '#fff' });
     text(g, toHex(b).toUpperCase(), 480, 100, { size: 14, weight: 700 });
     const cell = 12, x0 = 720, y0 = 10;
     for (let n = 36; n <= 99; n++) {

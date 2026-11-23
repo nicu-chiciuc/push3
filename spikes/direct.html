@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Push 3 — browser-only spike</title>
+  <title>Push 3: browser-only spike</title>
   <style>
     :root { color-scheme: dark; }
     body { font: 14px/1.45 -apple-system, system-ui, sans-serif; background: #0b0d11; color: #e7ebf0; margin: 0; padding: 20px; max-width: 1100px; }
@@ -18,8 +18,8 @@
   </style>
 </head>
 <body>
-  <h1>Push 3 — browser-only spike</h1>
-  <p>Talks to the Push with <b>Web MIDI</b> (pads, LEDs) and <b>WebUSB</b> (screen) — no Node bridge. Stop the bridge and quit Ableton Live first.</p>
+  <h1>Push 3: browser-only spike</h1>
+  <p>Talks to the Push with <b>Web MIDI</b> (pads, LEDs) and <b>WebUSB</b> (screen), with no Node bridge. Stop the bridge and quit Ableton Live first.</p>
 
   <h2>1 · Web MIDI</h2>
   <div class="row">
@@ -28,7 +28,7 @@
     <span id="midi-rate"></span>
   </div>
 
-  <h2>2 · WebUSB screen — main thread</h2>
+  <h2>2 · WebUSB screen: main thread</h2>
   <div class="row">
     <button id="usb-connect">Connect screen (pick “Ableton Push 3”)</button>
     <button id="bench-single">Benchmark: 1 transfer/frame (5 s)</button>
@@ -36,7 +36,7 @@
     <button id="usb-release">Release</button>
   </div>
 
-  <h2>3 · WebUSB screen — in a Web Worker (background-tab test)</h2>
+  <h2>3 · WebUSB screen: in a Web Worker (background-tab test)</h2>
   <div class="row">
     <button id="worker-start">Start worker pump</button>
     <button id="worker-stop">Stop worker</button>

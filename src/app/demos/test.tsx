@@ -70,7 +70,7 @@ export const test: Demo = {
     });
     const unknown = [...app.unmapped.keys()];
     text(g, 'Unmapped messages', 600, 12, { align: 'left', size: 12, color: '#9aa4b0' });
-    text(g, unknown.length ? unknown.map((cc) => `CC ${cc}`).join('  ') : 'none yet — good', 600, 32, { align: 'left', size: 13, color: unknown.length ? '#ff9f7a' : '#3ddc84' });
+    text(g, unknown.length ? unknown.map((cc) => `CC ${cc}`).join('  ') : 'none yet (good)', 600, 32, { align: 'left', size: 13, color: unknown.length ? '#ff9f7a' : '#3ddc84' });
     const total = rows.reduce((a, r) => a + r.n, 0), of = rows.reduce((a, r) => a + r.of, 0);
     text(g, `${Math.round((100 * total) / of)}%`, 600, 80, { align: 'left', size: 40, weight: 800, color: total === of ? '#3ddc84' : '#e8edf2' });
     text(g, 'of the device tested', 700, 86, { align: 'left', size: 12, color: '#9aa4b0' });

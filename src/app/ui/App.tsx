@@ -27,15 +27,15 @@ export const App: Component<{ engine: Engine }> = (props) => {
   const hint = createMemo((): { text: string; tone: 'info' | 'bad' } | null => {
     const s = e.status();
     if (direct()) {
-      if (!s.link) return { tone: 'info', text: 'This browser can’t talk to USB/MIDI devices. Open this page in Chrome or Edge to connect a Push 3 — or just play with the virtual one.' };
+      if (!s.link) return { tone: 'info', text: 'This browser can’t talk to USB/MIDI devices. Open this page in Chrome or Edge to connect a Push 3, or just play with the virtual one.' };
       if (!s.midi && !s.display) return { tone: 'info', text: 'Have a Push 3? Quit Ableton Live, plug it in and click “Connect Push”. No Push? Click and drag the virtual one.' };
       if (!s.display) return { tone: 'info', text: 'Pads connected. For the screen, click “Connect Push” and pick “Ableton Push 3”. If it stays off, quit Ableton Live (and the Node bridge, or any other tab using the Push).' };
       if (!s.midi) return { tone: 'info', text: 'Screen connected. Click “Connect Push” and allow MIDI to use pads and lights.' };
       return null;
     }
-    if (!s.link) return { tone: 'bad', text: 'Bridge offline — run `npm run dev` in the push3-twin folder, or switch to Direct mode (Chrome/Edge, nothing to install).' };
-    if (!s.midi) return { tone: 'bad', text: 'Push 3 not found — plug it in and make sure Ableton Live is closed.' };
-    if (!s.display) return { tone: 'bad', text: 'Push screen busy — quit Ableton Live (its background “Push3” process holds the display).' };
+    if (!s.link) return { tone: 'bad', text: 'Bridge offline: run `npm run dev` in the push3-twin folder, or switch to Direct mode (Chrome/Edge, nothing to install).' };
+    if (!s.midi) return { tone: 'bad', text: 'Push 3 not found: plug it in and make sure Ableton Live is closed.' };
+    if (!s.display) return { tone: 'bad', text: 'Push screen busy: quit Ableton Live (its background “Push3” process holds the display).' };
     return null;
   });
 
@@ -87,7 +87,7 @@ export const App: Component<{ engine: Engine }> = (props) => {
                   class="tab"
                   classList={{ active: e.demoIndex() === i() }}
                   style={{ '--c': css(d.color) }}
-                  title={`${d.name} — or upper display button ${i() + 1} on the Push (keyboard: ${i() + 1})`}
+                  title={`${d.name} (or upper display button ${i() + 1} on the Push, keyboard ${i() + 1})`}
                   onClick={() => e.switchDemo(i())}
                 >
                   <span class="num">{i() + 1}</span>{d.name}

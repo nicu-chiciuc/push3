@@ -96,7 +96,7 @@ export const ripple: Demo = {
     g.stroke();
     [`Speed ${s.speed.toFixed(1)}×`, `Hue +${Math.round(s.hue)}°`, `Width ${s.width.toFixed(1)}`, `Glow ${Math.round(s.idle * 100)}%`].forEach((l, i) =>
       text(g, l, i * 120 + 60, 12, { size: 12, color: app.touched.has(`e${i + 1}`) ? '#c6ff8a' : '#9aa4b0' }));
-    text(g, mode() === 'soft' ? 'Animated by the browser (~60 updates/s)' : 'Animated by the Push itself — one message per pad', 940, 12, { size: 12, align: 'right', color: '#c6ff8a' });
+    text(g, mode() === 'soft' ? 'Animated by the browser (~60 updates/s)' : 'Animated by the Push itself: one message per pad', 940, 12, { size: 12, align: 'right', color: '#c6ff8a' });
   },
 
   footer: () => ['Browser', 'HW Pulse', 'HW Blink', '', '', '', '', 'Clear'],

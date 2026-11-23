@@ -68,7 +68,7 @@ $('midi-connect').onclick = async () => {
     live.send(Cmd.identityRequest());
     live.send(Cmd.midiMode('user'));
     for (let i = 0; i < 64; i++) user.send([0x90, 36 + i, 1 + ((i * 2) % 126)]);
-    log(`MIDI ok — ${inputs.length} inputs, ${outputs.length} outputs; User Mode + rainbow pads sent`, 'ok');
+    log(`MIDI ok: ${inputs.length} inputs, ${outputs.length} outputs; User Mode + rainbow pads sent`, 'ok');
   } catch (e) {
     results.midi = { granted: false, error: errText(e) };
     log(`MIDI failed: ${errText(e)}`, 'bad');

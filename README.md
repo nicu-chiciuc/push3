@@ -9,7 +9,7 @@ A 3D digital twin and demo suite for a USB-tethered **Ableton Push 3** (controll
 | How | Web MIDI (pads, knobs, LEDs) + WebUSB (screen), straight from the page | WebSocket to a small local Node process that owns the Push |
 | Install | Nothing. Click **Connect Push** once; Chrome remembers it | `npm install` + `npm run dev` |
 | Browsers | Chrome / Edge (Chromium) | Any |
-| Screen while the tab is hidden | Stays on (frozen) — a worker keeps it alive | Stays on |
+| Screen while the tab is hidden | Stays on (frozen): a worker keeps it alive | Stays on |
 
 Measured on macOS with a Push 3: Web MIDI handled 6,400 LED messages/s; WebUSB drove the screen at 60 fps with one 327 KB transfer per frame. Add `?link=direct` or `?link=bridge` to the URL to force a mode, or use the link in the top bar. People without a Push can still use the 3D model with the mouse.
 
@@ -28,6 +28,16 @@ Quit Ableton Live first. Live grabs the MIDI ports, and its background `Push3` p
 When no browser is connected, the Push screen shows "OPEN LOCALHOST:7333". `Ctrl+C` closes every scope in order: LEDs off, Push handed back to Live mode, MIDI ports closed, USB display released.
 
 Other scripts: `npm run typecheck` checks both projects. `node scripts/probe-leds.ts` and `node scripts/probe-display.ts` are hardware diagnostics; run them with the bridge stopped.
+
+## Deploy
+
+Production: [push.tsx.md](https://push.tsx.md). The deploy follows the team standard ([samebase docs/alchemy-deploy-standard.md](https://github.com/samebase/samebase/blob/main/docs/alchemy-deploy-standard.md)):
+
+- `alchemy.run.ts` is the one Alchemy stack. It holds one Cloudflare Worker that serves `dist/` as static assets.
+- `.github/workflows/alchemy.yml` calls the shared `samebase/samebase` deploy workflow, which builds with `npm run typecheck && npm run build`.
+- Stages: `prod` deploys on each push to `main` and serves `push.tsx.md`. `pr-<number>` deploys on each pull request to its own `workers.dev` URL and is destroyed when the pull request closes.
+- State lives in the `alchemy-state-store` project of the Convex team.
+- The repository needs three secrets: `CONVEX_ACCESS_TOKEN`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 
 ## Stack, and where each piece fits
 

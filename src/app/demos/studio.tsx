@@ -1,4 +1,4 @@
-// Screen: the Push display as a canvas you control from the browser — scrolling text, a
+// Screen: the Push display as a canvas you control from the browser: scrolling text, a
 // generative plasma, any image you drop in, or a clock. The pads can mirror it at 8×8.
 import { createSignal, For } from 'solid-js';
 import { css, hsv } from '../engine/palette.ts';
@@ -145,7 +145,7 @@ export const studio: Demo = {
           <p class="muted">Drop an image here, or</p>
           <input type="file" accept="image/*" onChange={(e) => loadImage(e.currentTarget.files?.[0])} />
         </div>
-        <p class="muted">Knobs — Text: speed, hue, size · Plasma: speed, scale, hue · Image: zoom, pan X, pan Y.</p>
+        <p class="muted">Knobs. Text: speed, hue, size · Plasma: speed, scale, hue · Image: zoom, pan X, pan Y.</p>
       </>
     );
   },
