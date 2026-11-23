@@ -5,12 +5,12 @@
     "repositoryId": "1469334834",
     "repositoryOwnerId": "4076804",
     "repositoryName": "nicu-chiciuc/push3-twin",
-    "stackFile": "alchemy.run.ts",
+    "stackFile": "apps/twin/alchemy.run.ts",
     "branch": "main",
     "pullRequest": null,
-    "headCommit": "d7a775fb92b78eb97f853c5d6fcddec4dde833c8",
-    "runUrl": "https://github.com/nicu-chiciuc/push3-twin/actions/runs/45285650688/attempts/1",
+    "headCommit": "92d5d4c8dd437f0fa2c9f6be266becca5430046e",
+    "runUrl": "https://github.com/nicu-chiciuc/push3-twin/actions/runs/45292822211/attempts/1",
     "source": "github-actions",
-    "recordedAt": "2026-11-23T23:06:12.566Z"
+    "recordedAt": "2026-11-23T23:55:41.754Z"
   }
 }
