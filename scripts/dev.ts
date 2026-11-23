@@ -1,9 +1,9 @@
-// `npm run dev`: the bridge (restarts on change) + Vite with hot reload, in one terminal.
+// `pnpm dev`: the bridge (restarts on change) + the twin's Vite dev server, in one terminal.
 import { spawn } from 'node:child_process';
 
 const procs = [
-  spawn(process.execPath, ['--watch-path=src/bridge', '--watch-path=src/shared', 'src/bridge/main.ts'], { stdio: 'inherit' }),
-  spawn(process.execPath, ['node_modules/vite/bin/vite.js'], { stdio: 'inherit' }),
+  spawn(process.execPath, ['--watch-path=packages/node/src', '--watch-path=packages/protocol/src', 'packages/node/src/main.ts'], { stdio: 'inherit' }),
+  spawn(process.execPath, ['node_modules/vite/bin/vite.js'], { stdio: 'inherit', cwd: 'apps/twin' }),
 ];
 const stop = () => { for (const p of procs) if (p.exitCode === null) p.kill('SIGINT'); };
 process.on('SIGINT', stop);

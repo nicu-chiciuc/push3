@@ -1,0 +1,26 @@
+{
+  "name": "@push3/protocol",
+  "version": "0.1.0",
+  "description": "Ableton Push 3 as data: MIDI/SysEx, display frames, LED palette, event parser, controller",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./wire": "./src/wire.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "peerDependencies": {
+    "effect": "^4.1.4"
+  },
+  "peerDependenciesMeta": {
+    "effect": { "optional": true }
+  },
+  "devDependencies": {
+    "effect": "^4.1.4",
+    "typescript": "^7.0.2"
+  }
+}

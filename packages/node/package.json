@@ -1,0 +1,31 @@
+{
+  "name": "@push3/node",
+  "version": "0.1.0",
+  "description": "Own an Ableton Push 3 from Node and share it with local web pages (the bridge)",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "push3-bridge": "./src/main.ts"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@effect/platform-node": "^4.1.4",
+    "@julusian/midi": "^3.9.0",
+    "@push3/protocol": "workspace:*",
+    "effect": "^4.1.4",
+    "usb": "^2.19.1",
+    "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
+    "typescript": "^7.0.2"
+  }
+}

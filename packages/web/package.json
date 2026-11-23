@@ -1,0 +1,23 @@
+{
+  "name": "@push3/web",
+  "version": "0.1.0",
+  "description": "Drive an Ableton Push 3 from a web page: Web MIDI + WebUSB, or the local bridge",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@push3/protocol": "workspace:*",
+    "@types/w3c-web-usb": "^1.0.14",
+    "effect": "^4.1.4"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

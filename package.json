@@ -1,37 +1,21 @@
 {
-  "name": "push3-twin",
+  "name": "push3",
   "version": "0.1.0",
-  "description": "3D digital twin + demo suite for a USB-tethered Ableton Push 3",
-  "scripts": {
-    "start": "vite build && node src/bridge/main.ts",
-    "dev": "node scripts/dev.ts",
-    "build": "vite build",
-    "bridge": "node src/bridge/main.ts",
-    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.bridge.json"
-  },
+  "description": "Ableton Push 3 beyond Ableton: reusable packages (protocol, web, node) and the 3D twin app",
   "author": "Nicu Chiciuc",
   "license": "UNLICENSED",
+  "private": true,
   "type": "module",
-  "dependencies": {
-    "@effect/platform-node": "^4.1.5",
-    "@julusian/midi": "^3.9.0",
-    "effect": "^4.1.5",
-    "solid-js": "^1.9.20",
-    "three": "^0.170.0",
-    "usb": "^2.19.2",
-    "ws": "^8.23.0"
+  "packageManager": "pnpm@12.14.0",
+  "scripts": {
+    "dev": "node scripts/dev.ts",
+    "start": "pnpm --filter push3-twin start",
+    "build": "pnpm --filter push3-twin build",
+    "bridge": "pnpm --filter @push3/node start",
+    "typecheck": "pnpm -r typecheck && tsc -p ."
   },
   "devDependencies": {
-    "@alchemy.run/cloudflare": "^2.0.0-beta.87",
-    "@samebase/alchemy-kit": "^0.7.0",
     "@types/node": "^26.6.6",
-    "@types/three": "^0.170.0",
-    "@types/w3c-web-usb": "^1.0.14",
-    "@types/ws": "^8.18.2",
-    "alchemy": "^2.0.0-beta.87",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.8",
-    "vite-plugin-solid": "^2.11.17"
-  },
-  "private": true
+    "typescript": "^7.0.2"
+  }
 }

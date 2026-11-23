@@ -1,13 +1,24 @@
 # Push 3 Twin
 
-A 3D digital twin and demo suite for a USB-tethered **Ableton Push 3** (controller version). No Ableton Live needed and no hacking: it talks to the Push over plain MIDI plus the documented USB display protocol.
+A 3D digital twin and demo suite for a USB-tethered **Ableton Push 3** (controller version), plus the packages it is built from, so other apps can drive a Push too. No Ableton Live needed and no hacking: it talks to the Push over plain MIDI plus the documented USB display protocol.
+
+## Packages
+
+| Folder | Package | What it is |
+|---|---|---|
+| [`packages/protocol`](packages/protocol) | `@push3/protocol` | The Push 3 as data: control map, MIDI parser, SysEx, LED palette and diffing, display frame encoder, a transport-agnostic `PushController`. No dependencies. |
+| [`packages/web`](packages/web) | `@push3/web` | Drive a Push from a web page: `openPush()` (plain TS), or the `PushLink` Effect service with `DirectLink()` (Web MIDI + WebUSB) and `BridgeLink()` (local bridge). |
+| [`packages/node`](packages/node) | `@push3/node` | The bridge: owns the Push from Node and shares it with pages on localhost. `push3-bridge [--static <dir>]`. |
+| [`apps/twin`](apps/twin) | `push3-twin` | The 3D twin and demo tabs. Deployed to [push.tsx.md](https://push.tsx.md). |
+
+The packages export their TypeScript source and are private for now. Another app in this workspace, or a Vite app linked to it (`pnpm add link:../push3-twin/packages/web`), can use them as they are. Publishing them to npm needs a license and a build step first.
 
 ## Two ways to connect
 
 | | **Direct mode** (default on any deployed site) | **Bridge mode** (default on localhost) |
 |---|---|---|
 | How | Web MIDI (pads, knobs, LEDs) + WebUSB (screen), straight from the page | WebSocket to a small local Node process that owns the Push |
-| Install | Nothing. Click **Connect Push** once; Chrome remembers it | `npm install` + `npm run dev` |
+| Install | Nothing. Click **Connect Push** once; Chrome remembers it | `pnpm install` + `pnpm dev` |
 | Browsers | Chrome / Edge (Chromium) | Any |
 | Screen while the tab is hidden | Stays on (frozen): a worker keeps it alive | Stays on |
 
@@ -16,25 +27,26 @@ Measured on macOS with a Push 3: Web MIDI handled 6,400 LED messages/s; WebUSB d
 ## Run it
 
 ```bash
-npm install
-npm run dev      # bridge + Vite with hot reload → http://localhost:5173 (?link=direct to skip the bridge)
-npm start        # production: build, then the bridge serves it → http://localhost:7333
+pnpm install
+pnpm dev         # bridge + Vite with hot reload → http://localhost:5173 (?link=direct to skip the bridge)
+pnpm start       # production: build, then the bridge serves it → http://localhost:7333
+pnpm typecheck   # every package and the app
 ```
 
-`spikes/direct.html` (served by `npm run dev`) is the raw Web MIDI/WebUSB benchmark page.
+`apps/twin/spikes/direct.html` (served by `pnpm dev` at `/spikes/direct.html`) is the raw Web MIDI/WebUSB benchmark page.
 
 Quit Ableton Live first. Live grabs the MIDI ports, and its background `Push3` process holds the screen. Plug the Push's power supply in for full LED brightness; on USB power alone the LEDs are capped very dim. Use Chrome or another browser for the page.
 
 When no browser is connected, the Push screen shows "OPEN LOCALHOST:7333". `Ctrl+C` closes every scope in order: LEDs off, Push handed back to Live mode, MIDI ports closed, USB display released.
 
-Other scripts: `npm run typecheck` checks both projects. `node scripts/probe-leds.ts` and `node scripts/probe-display.ts` are hardware diagnostics; run them with the bridge stopped.
+Hardware diagnostics, with the bridge stopped: `node packages/node/scripts/probe-leds.ts` and `node packages/node/scripts/probe-display.ts`.
 
 ## Deploy
 
 Production: [push.tsx.md](https://push.tsx.md). One Alchemy stack, deployed from GitHub Actions:
 
-- `alchemy.run.ts` is the one Alchemy stack. It holds one Cloudflare Worker that serves `dist/` as static assets.
-- `.github/workflows/alchemy.yml` installs, builds with `npm run typecheck && npm run build` (no secrets), then runs `alchemy deploy`.
+- `apps/twin/alchemy.run.ts` is the one Alchemy stack. It holds one Cloudflare Worker that serves `apps/twin/dist` as static assets.
+- `.github/workflows/alchemy.yml` installs, builds with `pnpm typecheck && pnpm build` (no secrets), then runs `alchemy deploy` in `apps/twin`.
 - Stages: `prod` deploys on each push to `main` and serves `push.tsx.md`. `pr-<number>` deploys on each pull request to its own `workers.dev` URL and is destroyed when the pull request closes.
 - State lives on the branch `alchemy-state-store` of this repository ([`@samebase/alchemy-kit/github-state`](https://github.com/samebase/samebase/tree/main/packages/alchemy-kit#github-state-store)). The run writes it with its own `GITHUB_TOKEN`; no Convex token is needed.
 - The repository needs three secrets: `ALCHEMY_GITHUB_STATE_KEY` (seals secrets in the state), `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The API token is account-owned, named "push3-twin GitHub Actions (Alchemy deploy)", with Workers Scripts Write on the account plus Zone Read, Workers Routes Write and DNS Write on `tsx.md` only.
@@ -42,19 +54,26 @@ Production: [push.tsx.md](https://push.tsx.md). One Alchemy stack, deployed from
 ## Stack, and where each piece fits
 
 ```
-src/shared/      wire.ts: Effect Schema for every WebSocket message (validated on both ends)
-                 push.ts: Push 3 constants + SysEx builders
-src/bridge/      Node, run directly as TypeScript (Node's type stripping)
-  Device.ts      Effect service: supervised "session" per plug-in (scoped MIDI ports + USB display),
-                 retry schedules, hot-plug, status as a SubscriptionRef, incoming MIDI as a Stream
-  Server.ts      HTTP (serves dist/) + WebSocket on 127.0.0.1, as a scoped Layer
-  main.ts        Layer.launch + NodeRuntime.runMain
-src/app/         Browser: Vite + Solid
-  services/PushLink.ts       The one interface the app uses to reach the Push, with two Layers:
-    BridgeLink.ts            WebSocket to the Node bridge, reconnecting, Schema-decoded Stream
-    DirectLink.ts            Web MIDI + WebUSB; display-worker.ts pumps the screen
-  engine/        Plain TypeScript hot path: 60 fps loop, LED diffing, screen canvas → RGB565,
-                 Three.js twin, MIDI parser. UI-visible state is exposed as Solid signals.
+packages/protocol/src/   Pure TypeScript, no dependencies (wire.ts alone needs effect)
+  controls.ts            Every control and its MIDI number
+  parser.ts, events.ts   Raw MIDI → typed PushEvents
+  device.ts              Push 3 constants + SysEx builders
+  palette.ts, leds.ts    128-color palette; LED state that sends only what changed
+  display.ts             960×160 RGB565 frames for the USB display
+  controller.ts          PushController: parse, pad/button state, LEDs, take-over, modes
+  wire.ts                Effect Schema for every bridge WebSocket message (validated on both ends)
+packages/web/src/
+  PushLink.ts            The one interface an app uses to reach the Push, with two Layers:
+    DirectLink.ts        Web MIDI + WebUSB; display-worker.ts pumps the screen
+    BridgeLink.ts        WebSocket to the Node bridge, reconnecting, Schema-decoded Stream
+  push.ts                openPush(): the same, as one plain object
+packages/node/src/       Node, run directly as TypeScript (Node's type stripping)
+  Device.ts              Effect service: supervised "session" per plug-in (scoped MIDI ports + USB display),
+                         retry schedules, hot-plug, status as a SubscriptionRef, incoming MIDI as a Stream
+  Server.ts              HTTP (optional static app) + WebSocket on 127.0.0.1, as a scoped Layer
+  main.ts                push3-bridge: Layer.launch + NodeRuntime.runMain
+apps/twin/src/           Browser: Vite + Solid
+  engine/        Plain TypeScript hot path: 60 fps loop, screen canvas, Three.js twin (twin.ts, layout.ts)
   demos/*.tsx    One file per tab: onEvent / tick / draw (hot path) + a Solid Panel component.
                  Each tab is an Effect fiber; `activate` acquires device modes in its Scope,
                  e.g. `app.usePressureMode('mpe')`, and they're restored when you switch tabs.
@@ -80,7 +99,7 @@ src/app/         Browser: Vite + Solid
 
 ## Fixing a control mapping
 
-`src/app/engine/layout.ts` holds the physical layout (traced from a product photo) and the MIDI number of every control. Its numbers come from Ableton's Push 2 spec plus community Push 3 notes. If the Test tab shows a button as "Unmapped", or it lights up the wrong spot in 3D, fix it there.
+`packages/protocol/src/controls.ts` holds the MIDI number of every control. Its numbers come from Ableton's Push 2 spec plus community Push 3 notes. If the Test tab shows a button as "Unmapped", fix it there. Where a control sits on the 3D model is in `apps/twin/src/engine/layout.ts`.
 
 ## Protocol sources
 
