@@ -1,0 +1,28 @@
+{
+  "status": "creating",
+  "fqn": "Site",
+  "logicalId": "Site",
+  "instanceId": "f578b2d5f1ebf7736801c554bcf8615f",
+  "downstream": [],
+  "props": {
+    "name": "push3-twin",
+    "domain": "push.tsx.md",
+    "assets": {
+      "directory": "./dist",
+      "notFoundHandling": "single-page-application"
+    },
+    "compatibility": {
+      "date": "2026-11-01"
+    },
+    "workersDev": {
+      "enabled": true,
+      "previewsEnabled": true
+    },
+    "isExternal": true
+  },
+  "providerVersion": 0,
+  "resourceType": "Cloudflare.Worker",
+  "bindings": [],
+  "removalPolicy": "retain",
+  "providerMode": "live"
+}
