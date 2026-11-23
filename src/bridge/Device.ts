@@ -4,7 +4,8 @@
 import { Context, Deferred, Effect, Layer, PubSub, Schedule, Schema, Stream, SubscriptionRef } from 'effect';
 import { Input, Output } from '@julusian/midi';
 import { findByIds, usb, type OutEndpoint } from 'usb';
-import { Cmd, DISPLAY_FRAME_BYTES, STRIP_PUSH_DRAWS, USB_PRODUCT_ID, USB_VENDOR_ID, type Bytes } from '../shared/push.ts';
+import { DISPLAY_FRAME_BYTES, USB_PRODUCT_ID, USB_VENDOR_ID, type Bytes } from '../shared/push.ts';
+import { darken as darkenMessages, sessionEnd, sessionStart } from '../shared/session.ts';
 import { BRIDGE_PORT, type MidiPort } from '../shared/wire.ts';
 import { encodeFrame, FRAME_HEADER, idleFrame, USB_CHUNK } from './frames.ts';
 
@@ -40,10 +41,7 @@ const isPush = (d: usb.Device) => d.deviceDescriptor.idVendor === USB_VENDOR_ID 
 
 /** Turn off every LED the app may have lit and restore the touch strip. */
 function darken(send: (port: MidiPort, bytes: Bytes) => void) {
-  for (let n = 36; n <= 99; n++) send('user', [0x90, n, 0]);
-  const encoders = new Set([1, 14, 15, 64, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79]);
-  for (let cc = 0; cc < 120; cc++) if (!encoders.has(cc)) send('user', [0xb0, cc, 0]);
-  send('user', Cmd.stripConfig(STRIP_PUSH_DRAWS));
+  for (const [port, bytes] of darkenMessages()) send(port, bytes);
 }
 
 /** Open the Push's MIDI ports in the current scope. */
@@ -79,11 +77,8 @@ const openMidi = Effect.fnUntraced(function* (onMessage: (msg: IncomingMidi) => 
   };
 
   // Added after the outputs, so it runs before they close: leave the Push tidy and hand it back to Live.
-  yield* Effect.addFinalizer(() => Effect.sync(() => { darken(send); send('live', Cmd.midiMode('live')); }));
-
-  send('live', Cmd.midiMode('user'));
-  send('live', Cmd.ledBrightness(127)); // the Push caps this on USB bus power
-  send('live', Cmd.displayBrightness(255));
+  yield* Effect.addFinalizer(() => Effect.sync(() => { for (const [port, bytes] of sessionEnd()) send(port, bytes); }));
+  for (const [port, bytes] of sessionStart()) send(port, bytes);
   yield* Effect.logInfo('MIDI connected, Push 3 in User Mode');
   return send;
 });

@@ -21,12 +21,22 @@ export const App: Component<{ engine: Engine }> = (props) => {
   onMount(() => addEventListener('keydown', onKey));
   onCleanup(() => removeEventListener('keydown', onKey));
 
-  const hint = createMemo(() => {
+  const direct = () => e.linkKind() === 'direct';
+  const needsConnect = () => direct() && e.status().link && (!e.status().midi || !e.status().display);
+  const otherMode = () => `${location.pathname}?link=${direct() ? 'bridge' : 'direct'}`;
+  const hint = createMemo((): { text: string; tone: 'info' | 'bad' } | null => {
     const s = e.status();
-    if (!s.bridge) return 'Bridge offline — run `npm run dev` (or `npm start`) in the push3-twin folder.';
-    if (!s.midi) return 'Push 3 not found — plug it in and make sure Ableton Live is closed.';
-    if (!s.display) return 'Push screen busy — quit Ableton Live (its background “Push3” process holds the display).';
-    return '';
+    if (direct()) {
+      if (!s.link) return { tone: 'info', text: 'This browser can’t talk to USB/MIDI devices. Open this page in Chrome or Edge to connect a Push 3 — or just play with the virtual one.' };
+      if (!s.midi && !s.display) return { tone: 'info', text: 'Have a Push 3? Quit Ableton Live, plug it in and click “Connect Push”. No Push? Click and drag the virtual one.' };
+      if (!s.display) return { tone: 'info', text: 'Pads connected. To use the screen too, click “Connect Push” and pick “Ableton Push 3” (quit Ableton Live first).' };
+      if (!s.midi) return { tone: 'info', text: 'Screen connected. Click “Connect Push” and allow MIDI to use pads and lights.' };
+      return null;
+    }
+    if (!s.link) return { tone: 'bad', text: 'Bridge offline — run `npm run dev` in the push3-twin folder, or switch to Direct mode (Chrome/Edge, nothing to install).' };
+    if (!s.midi) return { tone: 'bad', text: 'Push 3 not found — plug it in and make sure Ableton Live is closed.' };
+    if (!s.display) return { tone: 'bad', text: 'Push screen busy — quit Ableton Live (its background “Push3” process holds the display).' };
+    return null;
   });
 
   return (
@@ -34,9 +44,20 @@ export const App: Component<{ engine: Engine }> = (props) => {
       <header class="top">
         <div class="brand"><span class="logo" />Push 3 Twin</div>
         <div class="status">
-          <Pill ok={e.status().bridge} label="Bridge" value={e.status().bridge ? 'connected' : 'offline'} />
-          <Pill ok={e.status().midi} label="MIDI" value={e.status().midi ? 'User Mode' : 'not found'} />
-          <Pill ok={e.status().display} label="Screen" value={e.status().display ? 'streaming' : 'not claimed'} />
+          <Show
+            when={direct()}
+            fallback={<Pill ok={e.status().link} label="Bridge" value={e.status().link ? 'connected' : 'offline'} />}
+          >
+            <Pill ok={e.status().link} label="Direct" value={e.status().link ? 'Web MIDI + WebUSB' : 'unsupported browser'} />
+          </Show>
+          <Pill ok={e.status().midi} label="MIDI" value={e.status().midi ? 'User Mode' : 'not connected'} />
+          <Pill ok={e.status().display} label="Screen" value={e.status().display ? 'streaming' : 'not connected'} />
+          <Show when={needsConnect()}>
+            <button class="primary" onClick={() => e.connectDevice()}>Connect Push</button>
+          </Show>
+          <a class="mode-link" href={otherMode()} title="Switch between the local Node bridge and talking to the Push directly from this page">
+            {direct() ? 'Use local bridge' : 'Use direct mode'}
+          </a>
         </div>
         <div class="tools">
           <div class="seg">
@@ -45,14 +66,14 @@ export const App: Component<{ engine: Engine }> = (props) => {
             </For>
           </div>
           <label class="toggle"><input type="checkbox" checked={glow()} onChange={(ev) => { setGlow(ev.currentTarget.checked); e.twin.setBloom(glow()); }} /> Glow</label>
-          <button title="Re-send palette, modes and every LED to the Push" onClick={() => e.resync()}>Re-sync</button>
+          <button title="Re-send palette, modes and every LED to the Push" disabled={!e.status().midi} onClick={() => e.resync()}>Re-sync</button>
         </div>
       </header>
 
       <main>
         <section id="stage" aria-label="3D model of the Push 3">
           <div class="stage-canvas" ref={canvasHost} />
-          <Show when={hint()}><div id="hint">{hint()}</div></Show>
+          <Show when={hint()}>{(h) => <div id="hint" class={h().tone}>{h().text}</div>}</Show>
           <div class="stage-help">Drag to orbit · scroll to zoom · click pads, buttons, knobs (drag up/down) and the touch strip to use them virtually</div>
         </section>
 

@@ -1,7 +1,9 @@
 import { render } from 'solid-js/web';
 import { Effect, Layer, Stream, SubscriptionRef } from 'effect';
 import { Engine } from './engine/engine.ts';
-import { BridgeClient } from './services/BridgeClient.ts';
+import { PushLink, type LinkKind } from './services/PushLink.ts';
+import { BridgeLink } from './services/BridgeLink.ts';
+import { DirectLink } from './services/DirectLink.ts';
 import { App } from './ui/App.tsx';
 import { explore } from './demos/explore.tsx';
 import { test } from './demos/test.tsx';
@@ -16,21 +18,20 @@ import './styles.css';
 const engine = new Engine([explore, test, paint, expression, ripple, cssKnobs, studio, snake]);
 Object.assign(window, { push3: engine }); // handy for poking at things from DevTools
 
-// The Effect side: a supervised connection to the bridge, piped into the engine.
+// Which transport: ?link=bridge|direct, else the local bridge on localhost and direct everywhere else.
+const requested = new URLSearchParams(location.search).get('link');
+const local = ['localhost', '127.0.0.1'].includes(location.hostname);
+const kind: LinkKind = requested === 'bridge' || requested === 'direct' ? requested : local ? 'bridge' : 'direct';
+
+// The Effect side: one PushLink (swapped by Layer), piped into the engine.
 const Wiring = Layer.effectDiscard(
   Effect.gen(function* () {
-    const client = yield* BridgeClient;
-    engine.attach(client);
-    yield* client.midi.pipe(
-      Stream.runForEach((m) => Effect.sync(() => engine.onMidi(m.port, m.data))),
-      Effect.forkScoped,
-    );
-    yield* SubscriptionRef.changes(client.status).pipe(
-      Stream.runForEach((s) => Effect.sync(() => engine.onStatus(s))),
-      Effect.forkScoped,
-    );
+    const link = yield* PushLink;
+    engine.attach(link);
+    yield* link.midi.pipe(Stream.runForEach((m) => Effect.sync(() => engine.onMidi(m.port, m.data))), Effect.forkScoped);
+    yield* SubscriptionRef.changes(link.status).pipe(Stream.runForEach((s) => Effect.sync(() => engine.onStatus(s))), Effect.forkScoped);
   }),
-).pipe(Layer.provide(BridgeClient.layer));
+).pipe(Layer.provide(kind === 'direct' ? DirectLink : BridgeLink));
 
 render(() => <App engine={engine} />, document.getElementById('root')!);
 Effect.runFork(Layer.launch(Wiring));

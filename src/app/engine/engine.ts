@@ -5,6 +5,7 @@ import { createSignal, type Accessor, type Component } from 'solid-js';
 import { Effect, Fiber, type Scope } from 'effect';
 import { Cmd, STRIP_HOST_DRAWS, STRIP_PUSH_DRAWS, type Bytes, type PressureMode } from '../../shared/push.ts';
 import type { MidiPort } from '../../shared/wire.ts';
+import type { LinkKind, LinkStatus } from '../services/PushLink.ts';
 import { ENCODERS } from './layout.ts';
 import { Leds } from './leds.ts';
 import { paletteMessages, scale } from './palette.ts';
@@ -31,14 +32,15 @@ export interface Demo {
   readonly Panel?: Component<{ app: Engine }>;
 }
 
-/** What the engine needs from the bridge connection. */
+/** What the engine needs from a PushLink (bridge or direct). */
 export interface Link {
+  readonly kind: LinkKind;
   sendMidi(batch: ReadonlyArray<Bytes>, port?: MidiPort): void;
   sendFrame(pixels: Uint16Array<ArrayBuffer>): void;
-  reconnectDevice(): void;
+  connect(): void;
 }
 
-export interface Status { readonly bridge: boolean; readonly midi: boolean; readonly display: boolean }
+export type Status = LinkStatus;
 export interface LogEntry { readonly text: string; readonly source: 'hw' | 'virtual'; readonly raw: string; readonly kind: string }
 
 export const store = {
@@ -69,6 +71,7 @@ export class Engine {
 
   // ── reactive state for the UI ──
   readonly status: Accessor<Status>;
+  readonly linkKind: Accessor<LinkKind | null>;
   readonly demoIndex: Accessor<number>;
   readonly log: Accessor<ReadonlyArray<LogEntry>>;
   readonly sent: Accessor<number>;
@@ -76,7 +79,7 @@ export class Engine {
   readonly logPaused: Accessor<boolean>;
   readonly logContinuous: Accessor<boolean>;
   private readonly set: {
-    status: (s: Status) => void; demoIndex: (i: number) => void; log: (fn: (l: ReadonlyArray<LogEntry>) => ReadonlyArray<LogEntry>) => void;
+    status: (s: Status) => void; linkKind: (k: LinkKind) => void; demoIndex: (i: number) => void; log: (fn: (l: ReadonlyArray<LogEntry>) => ReadonlyArray<LogEntry>) => void;
     sent: (n: number) => void; seenVersion: (n: number) => void; logPaused: (b: boolean) => void; logContinuous: (b: boolean) => void;
   };
 
@@ -92,7 +95,8 @@ export class Engine {
 
   constructor(demos: ReadonlyArray<Demo>) {
     this.demos = demos;
-    const [status, setStatus] = createSignal<Status>({ bridge: false, midi: false, display: false });
+    const [status, setStatus] = createSignal<Status>({ link: false, midi: false, display: false });
+    const [linkKind, setLinkKind] = createSignal<LinkKind | null>(null);
     const [demoIndex, setDemoIndex] = createSignal(Math.min(demos.length - 1, Math.max(0, store.get('demo', 0))));
     const [log, setLog] = createSignal<ReadonlyArray<LogEntry>>([]);
     const [sent, setSent] = createSignal(0);
@@ -100,13 +104,14 @@ export class Engine {
     const [logPaused, setLogPaused] = createSignal(false);
     const [logContinuous, setLogContinuous] = createSignal(false);
     this.status = status;
+    this.linkKind = linkKind;
     this.demoIndex = demoIndex;
     this.log = log;
     this.sent = sent;
     this.seenVersion = seenVersion;
     this.logPaused = logPaused;
     this.logContinuous = logContinuous;
-    this.set = { status: setStatus, demoIndex: setDemoIndex, log: setLog, sent: setSent, seenVersion: setSeenVersion, logPaused: setLogPaused, logContinuous: setLogContinuous };
+    this.set = { status: setStatus, linkKind: setLinkKind, demoIndex: setDemoIndex, log: setLog, sent: setSent, seenVersion: setSeenVersion, logPaused: setLogPaused, logContinuous: setLogContinuous };
   }
 
   get demo(): Demo { return this.demos[this.demoIndex()]!; }
@@ -120,13 +125,13 @@ export class Engine {
     requestAnimationFrame(this.frame);
   }
 
-  attach(link: Link) { this.link = link; }
+  attach(link: Link) { this.link = link; this.set.linkKind(link.kind); }
 
   // ── input ──
   onStatus(s: Status) {
     const before = this.status();
     this.set.status(s);
-    if (s.midi && (!before.midi || !before.bridge)) this.initDevice();
+    if (s.midi && (!before.midi || !before.link)) this.initDevice();
   }
 
   onMidi(_port: MidiPort, data: ReadonlyArray<number>) {
@@ -180,7 +185,11 @@ export class Engine {
     this.flushLeds();
   }
 
-  resync() { this.link?.reconnectDevice(); this.initDevice(); }
+  /** Re-send palette, modes and every LED (bridge: also reconnect the device). */
+  resync() { if (this.link?.kind === 'bridge') this.link.connect(); this.initDevice(); }
+
+  /** Direct mode: must be called from a click (the USB chooser needs the user gesture). */
+  connectDevice() { this.link?.connect(); }
 
   setPressureMode(mode: PressureMode) {
     this.pressureMode = mode;

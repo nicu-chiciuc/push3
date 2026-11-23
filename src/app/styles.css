@@ -126,3 +126,10 @@ pre.code { background: #0d1015; border: 1px solid var(--line); border-radius: 10
 .score-row div { flex: 1; background: #0d1015; border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; display: flex; flex-direction: column; }
 .score-row b { font-size: 28px; color: var(--accent); }
 .score-row span { color: var(--muted); font-size: 12px; }
+#hint.info { background: #10202a; border-color: #1f4a5e; color: #cfeefc; }
+button.primary { background: #46d7ff; color: #05080c; border-color: #46d7ff; font-weight: 700; padding: 3px 12px; }
+button.primary:hover { background: #7fe4ff; }
+button:disabled { opacity: 0.45; cursor: default; }
+.mode-link { font-size: 12px; color: var(--muted); text-decoration: underline dotted; align-self: center; }
+.mode-link:hover { color: var(--text); }
+.status { align-items: center; }
