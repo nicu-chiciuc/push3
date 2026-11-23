@@ -6,28 +6,39 @@ A 3D digital twin and demo suite for a USB-tethered **Ableton Push 3** (controll
 
 ```bash
 npm install
-npm start            # → http://localhost:7333 (open in Chrome)
+npm run dev      # bridge + Vite with hot reload → http://localhost:5173
+npm start        # production: build, then the bridge serves it → http://localhost:7333
 ```
 
-Quit Ableton Live first. Live grabs the MIDI ports, and its background `Push3` process holds the screen. Plug the Push's power supply in for full LED brightness. On USB power alone the LEDs are capped very dim.
+Quit Ableton Live first. Live grabs the MIDI ports, and its background `Push3` process holds the screen. Plug the Push's power supply in for full LED brightness; on USB power alone the LEDs are capped very dim. Use Chrome or another browser for the page.
 
-When no browser is connected, the Push screen shows "OPEN LOCALHOST:7333". `Ctrl+C` turns the LEDs off and hands the Push back to Live mode.
+When no browser is connected, the Push screen shows "OPEN LOCALHOST:7333". `Ctrl+C` closes every scope in order: LEDs off, Push handed back to Live mode, MIDI ports closed, USB display released.
 
-## How it works
+Other scripts: `npm run typecheck` checks both projects. `node scripts/probe-leds.ts` and `node scripts/probe-display.ts` are hardware diagnostics; run them with the bridge stopped.
+
+## Stack, and where each piece fits
 
 ```
-Browser (Three.js twin, demos, screen canvas)
-   ⇅ WebSocket (JSON MIDI + binary RGB565 frames)
-server.mjs: Node bridge on 127.0.0.1:7333
-   ⇅ CoreMIDI (@julusian/midi): Push 3 Live / User ports
-   ⇅ libusb (usb): display interface 0, bulk endpoint 0x01
-Ableton Push 3 (USB 0x2982:0x1969)
+src/shared/      wire.ts: Effect Schema for every WebSocket message (validated on both ends)
+                 push.ts: Push 3 constants + SysEx builders
+src/bridge/      Node, run directly as TypeScript (Node's type stripping)
+  Device.ts      Effect service: supervised "session" per plug-in (scoped MIDI ports + USB display),
+                 retry schedules, hot-plug, status as a SubscriptionRef, incoming MIDI as a Stream
+  Server.ts      HTTP (serves dist/) + WebSocket on 127.0.0.1, as a scoped Layer
+  main.ts        Layer.launch + NodeRuntime.runMain
+src/app/         Browser: Vite + Solid
+  services/BridgeClient.ts   Effect service: WebSocket with reconnect, Schema-decoded Stream
+  engine/        Plain TypeScript hot path: 60 fps loop, LED diffing, screen canvas → RGB565,
+                 Three.js twin, MIDI parser. UI-visible state is exposed as Solid signals.
+  demos/*.tsx    One file per tab: onEvent / tick / draw (hot path) + a Solid Panel component.
+                 Each tab is an Effect fiber; `activate` acquires device modes in its Scope,
+                 e.g. `app.usePressureMode('mpe')`, and they're restored when you switch tabs.
+  ui/App.tsx     Solid shell: status, tabs, panel, event log
 ```
 
-- **Push → browser:** every MIDI message is relayed raw. `protocol.js` turns it into events (pad down/up/pressure/roll/slide, button, encoder delta, touch, strip).
-- **Browser → Push LEDs:** demos set colors freely every frame. `leds.js` sends only what changed. The app rewrites the 128-entry color palette at startup (`palette.js`), so it knows exactly what each LED shows.
-- **Browser → Push screen:** the 960×160 display is a normal `<canvas>`. It's converted to RGB565 and streamed at about 30 fps. The bridge pads and XOR-masks each frame and keeps resending it, because the screen blanks after 2 s without frames.
-- **3D twin:** mirrors all of the above. You can click, drag or turn its controls, and those virtual events go through the same pipeline as hardware events.
+- **Effect** handles lifecycles, concurrency, retries and validation: the whole bridge, the browser's connection, and each tab's lifetime.
+- **Plain TS** handles everything that runs per frame or per MIDI message.
+- **Solid** handles the DOM. Its fine-grained signals update only what changed, and it coexists with the imperative Three.js and canvas code.
 
 ## Tabs (upper display buttons 1–8, or keys 1–8)
 
@@ -37,19 +48,14 @@ Ableton Push 3 (USB 0x2982:0x1969)
 | Test | Coverage checklist: every pad/button/knob you use turns green. Palette sweep, screen test pattern |
 | Paint | Pads as an 8×8 canvas; knobs = hue/sat/brightness |
 | Expression | Channel AT / Poly AT / MPE modes, per-finger pressure + roll + slide, Web Audio synth |
-| Ripple | Light show at hundreds of LED messages/s, or the Push's own hardware pulse/blink animation |
+| Ripple | Light show from the browser every frame, or the Push's own hardware pulse/blink animation |
 | CSS Knobs | 8 knobs → 8 CSS custom properties on a live card, presets on pads, generated CSS |
 | Screen | Scrolling text, plasma, dropped images, clock on the Push display; pads mirror it |
 | Snake | A game on the pad grid (arrows, jog wheel or pads to steer) |
 
-## Files
+## Fixing a control mapping
 
-- `server.mjs`: the bridge (MIDI, USB display, static server, WebSocket with a localhost-only origin check)
-- `lib/font5x7.mjs`: bitmap font for the idle screen
-- `public/js/layout.js`: **physical layout + MIDI numbers.** Fix mappings here.
-- `public/js/protocol.js`: MIDI parser and SysEx builders
-- `public/js/twin.js`: Three.js model
-- `public/js/demos/*.js`: one file per tab. Each has `onEvent`, `tick`, `draw` (screen) and `panel` (side UI).
+`src/app/engine/layout.ts` holds the physical layout (traced from a product photo) and the MIDI number of every control. Its numbers come from Ableton's Push 2 spec plus community Push 3 notes. If the Test tab shows a button as "Unmapped", or it lights up the wrong spot in 3D, fix it there.
 
 ## Protocol sources
 
