@@ -29,7 +29,7 @@ export const App: Component<{ engine: Engine }> = (props) => {
     if (direct()) {
       if (!s.link) return { tone: 'info', text: 'This browser can’t talk to USB/MIDI devices. Open this page in Chrome or Edge to connect a Push 3 — or just play with the virtual one.' };
       if (!s.midi && !s.display) return { tone: 'info', text: 'Have a Push 3? Quit Ableton Live, plug it in and click “Connect Push”. No Push? Click and drag the virtual one.' };
-      if (!s.display) return { tone: 'info', text: 'Pads connected. To use the screen too, click “Connect Push” and pick “Ableton Push 3” (quit Ableton Live first).' };
+      if (!s.display) return { tone: 'info', text: 'Pads connected. For the screen, click “Connect Push” and pick “Ableton Push 3”. If it stays off, quit Ableton Live (and the Node bridge, or any other tab using the Push).' };
       if (!s.midi) return { tone: 'info', text: 'Screen connected. Click “Connect Push” and allow MIDI to use pads and lights.' };
       return null;
     }
@@ -55,9 +55,11 @@ export const App: Component<{ engine: Engine }> = (props) => {
           <Show when={needsConnect()}>
             <button class="primary" onClick={() => e.connectDevice()}>Connect Push</button>
           </Show>
-          <a class="mode-link" href={otherMode()} title="Switch between the local Node bridge and talking to the Push directly from this page">
-            {direct() ? 'Use local bridge' : 'Use direct mode'}
-          </a>
+          <Show when={['localhost', '127.0.0.1'].includes(location.hostname)}>
+            <a class="mode-link" href={otherMode()} title="Switch between the local Node bridge and talking to the Push directly from this page">
+              {direct() ? 'Use local bridge' : 'Use direct mode'}
+            </a>
+          </Show>
         </div>
         <div class="tools">
           <div class="seg">

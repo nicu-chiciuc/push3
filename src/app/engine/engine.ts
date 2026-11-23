@@ -5,6 +5,7 @@ import { createSignal, type Accessor, type Component } from 'solid-js';
 import { Effect, Fiber, type Scope } from 'effect';
 import { Cmd, STRIP_HOST_DRAWS, STRIP_PUSH_DRAWS, type Bytes, type PressureMode } from '../../shared/push.ts';
 import type { MidiPort } from '../../shared/wire.ts';
+import { sessionStart } from '../../shared/session.ts';
 import type { LinkKind, LinkStatus } from '../services/PushLink.ts';
 import { ENCODERS } from './layout.ts';
 import { Leds } from './leds.ts';
@@ -179,6 +180,8 @@ export class Engine {
   private flushLeds() { this.send(this.leds.flush(this.stripHost)); }
 
   private initDevice() {
+    // User Mode + brightness again: something else (Live, the bridge exiting) may have taken the Push back.
+    this.link?.sendMidi(sessionStart().map(([, bytes]) => bytes), 'live');
     this.send([...paletteMessages(), Cmd.pressureMode(this.pressureMode), Cmd.stripConfig(this.stripHost ? STRIP_HOST_DRAWS : STRIP_PUSH_DRAWS)]);
     if (this.pressureMode === 'mpe') this.send([Cmd.mpeParam(0x08, 0x02)]);
     this.leds.invalidate();
