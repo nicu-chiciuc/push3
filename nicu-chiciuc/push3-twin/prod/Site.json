@@ -1,5 +1,5 @@
 {
-  "status": "creating",
+  "status": "created",
   "fqn": "Site",
   "logicalId": "Site",
   "instanceId": "f578b2d5f1ebf7736801c554bcf8615f",
@@ -20,8 +20,40 @@
     },
     "isExternal": true
   },
-  "providerVersion": 0,
+  "attr": {
+    "workerId": "89730121a7ff4acdab02e9fb095b73b5",
+    "workerName": "push3-twin",
+    "logpush": false,
+    "url": "https://push.tsx.md",
+    "urls": [
+      "https://push.tsx.md",
+      "https://push3-twin.pfp.workers.dev"
+    ],
+    "domain": {
+      "name": "push.tsx.md",
+      "aliases": [],
+      "redirects": []
+    },
+    "tags": [
+      "alchemy:stack:nicu-chiciuc/push3-twin",
+      "alchemy:stage:prod",
+      "alchemy:id:Site"
+    ],
+    "durableObjectNamespaces": {},
+    "accountId": "fe57d01d7ab41f60d00ba1aade20eb33",
+    "routes": [],
+    "crons": [],
+    "tailConsumers": [],
+    "versionId": "c8bdb54e-ca4a-4d5e-b6e1-e6ea139bb8ba",
+    "deploymentId": "2604e1dc-4d01-4c0f-9825-7a028b74574d",
+    "secretNames": [],
+    "hash": {
+      "assets": "e411e88023acf87a27cdf2064b1f3f7dd4154126d1a0402db034f4b5418481a0",
+      "metadata": "28a9399c82896b47ae447619fedd065c1762929710c74114f416c832f1c9d087"
+    }
+  },
   "bindings": [],
+  "providerVersion": 0,
   "downstream": [],
   "removalPolicy": "retain",
   "providerMode": "live"
