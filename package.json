@@ -23,13 +23,12 @@
   },
   "devDependencies": {
     "@alchemy.run/cloudflare": "^2.0.0-beta.87",
-    "@samebase/alchemy-convex": "^0.42.0",
+    "@samebase/alchemy-kit": "^0.7.0",
     "@types/node": "^26.6.6",
     "@types/three": "^0.170.0",
     "@types/w3c-web-usb": "^1.0.14",
     "@types/ws": "^8.18.2",
     "alchemy": "^2.0.0-beta.87",
-    "convex": "^1.48.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
     "vite-plugin-solid": "^2.11.17"

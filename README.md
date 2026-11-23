@@ -31,13 +31,13 @@ Other scripts: `npm run typecheck` checks both projects. `node scripts/probe-led
 
 ## Deploy
 
-Production: [push.tsx.md](https://push.tsx.md). The deploy follows the team standard ([samebase docs/alchemy-deploy-standard.md](https://github.com/samebase/samebase/blob/main/docs/alchemy-deploy-standard.md)):
+Production: [push.tsx.md](https://push.tsx.md). One Alchemy stack, deployed from GitHub Actions:
 
 - `alchemy.run.ts` is the one Alchemy stack. It holds one Cloudflare Worker that serves `dist/` as static assets.
-- `.github/workflows/alchemy.yml` calls the shared `samebase/samebase` deploy workflow, which builds with `npm run typecheck && npm run build`.
+- `.github/workflows/alchemy.yml` installs, builds with `npm run typecheck && npm run build` (no secrets), then runs `alchemy deploy`.
 - Stages: `prod` deploys on each push to `main` and serves `push.tsx.md`. `pr-<number>` deploys on each pull request to its own `workers.dev` URL and is destroyed when the pull request closes.
-- State lives in the `alchemy-state-store` project of the Convex team.
-- The repository needs three secrets: `CONVEX_ACCESS_TOKEN`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+- State lives on the branch `alchemy-state-store` of this repository ([`@samebase/alchemy-kit/github-state`](https://github.com/samebase/samebase/tree/main/packages/alchemy-kit#github-state-store)). The run writes it with its own `GITHUB_TOKEN`; no Convex token is needed.
+- The repository needs three secrets: `ALCHEMY_GITHUB_STATE_KEY` (seals secrets in the state), `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The API token is account-owned, named "push3-twin GitHub Actions (Alchemy deploy)", with Workers Scripts Write on the account plus Zone Read, Workers Routes Write and DNS Write on `tsx.md` only.
 
 ## Stack, and where each piece fits
 
