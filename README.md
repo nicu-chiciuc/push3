@@ -2,13 +2,26 @@
 
 A 3D digital twin and demo suite for a USB-tethered **Ableton Push 3** (controller version). No Ableton Live needed and no hacking: it talks to the Push over plain MIDI plus the documented USB display protocol.
 
+## Two ways to connect
+
+| | **Direct mode** (default on any deployed site) | **Bridge mode** (default on localhost) |
+|---|---|---|
+| How | Web MIDI (pads, knobs, LEDs) + WebUSB (screen), straight from the page | WebSocket to a small local Node process that owns the Push |
+| Install | Nothing. Click **Connect Push** once; Chrome remembers it | `npm install` + `npm run dev` |
+| Browsers | Chrome / Edge (Chromium) | Any |
+| Screen while the tab is hidden | Stays on (frozen) — a worker keeps it alive | Stays on |
+
+Measured on macOS with a Push 3: Web MIDI handled 6,400 LED messages/s; WebUSB drove the screen at 60 fps with one 327 KB transfer per frame. Add `?link=direct` or `?link=bridge` to the URL to force a mode, or use the link in the top bar. People without a Push can still use the 3D model with the mouse.
+
 ## Run it
 
 ```bash
 npm install
-npm run dev      # bridge + Vite with hot reload → http://localhost:5173
+npm run dev      # bridge + Vite with hot reload → http://localhost:5173 (?link=direct to skip the bridge)
 npm start        # production: build, then the bridge serves it → http://localhost:7333
 ```
+
+`spikes/direct.html` (served by `npm run dev`) is the raw Web MIDI/WebUSB benchmark page.
 
 Quit Ableton Live first. Live grabs the MIDI ports, and its background `Push3` process holds the screen. Plug the Push's power supply in for full LED brightness; on USB power alone the LEDs are capped very dim. Use Chrome or another browser for the page.
 
@@ -27,7 +40,9 @@ src/bridge/      Node, run directly as TypeScript (Node's type stripping)
   Server.ts      HTTP (serves dist/) + WebSocket on 127.0.0.1, as a scoped Layer
   main.ts        Layer.launch + NodeRuntime.runMain
 src/app/         Browser: Vite + Solid
-  services/BridgeClient.ts   Effect service: WebSocket with reconnect, Schema-decoded Stream
+  services/PushLink.ts       The one interface the app uses to reach the Push, with two Layers:
+    BridgeLink.ts            WebSocket to the Node bridge, reconnecting, Schema-decoded Stream
+    DirectLink.ts            Web MIDI + WebUSB; display-worker.ts pumps the screen
   engine/        Plain TypeScript hot path: 60 fps loop, LED diffing, screen canvas → RGB565,
                  Three.js twin, MIDI parser. UI-visible state is exposed as Solid signals.
   demos/*.tsx    One file per tab: onEvent / tick / draw (hot path) + a Solid Panel component.
