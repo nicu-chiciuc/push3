@@ -104,17 +104,26 @@ apps/twin/src/           Browser: Vite + Solid
 
 ### Video deck: what runs where
 
-Everything runs in the browser, on the deployed site too. Chrome's `<video>` shows the picture (MKV,
-MP4 or WebM with H.264, HEVC including HDR, AV1 or VP9), muted. [Mediabunny](https://mediabunny.dev/)
-(MPL-2.0) reads the same file in pieces and decodes its audio, with WASM decoders for AC-3, E-AC-3 and
-DTS (LGPL FFmpeg builds, loaded only for files that need them). [Signalsmith
-Stretch](https://signalsmith-audio.co.uk/code/stretch/) (MIT) plays that audio in step with the
-picture and does speed, pitch and formant. `patches/signalsmith-stretch@1.3.2.patch` fixes a bug in
-its buffer mode (silence once the audio is in more than one buffer).
+Everything runs in the browser, on the deployed site too; the file never leaves the computer.
+Chrome's `<video>` shows the picture (MKV, MP4 or WebM with H.264, HEVC including HDR, AV1 or VP9),
+muted. [Mediabunny](https://mediabunny.dev/) (MPL-2.0) reads the same file in pieces and decodes its
+audio, with WASM decoders for AC-3, E-AC-3 and DTS (LGPL FFmpeg builds, loaded only for files that
+need them). [Signalsmith Stretch](https://signalsmith-audio.co.uk/code/stretch/) (MIT) plays that
+audio in step with the picture and does speed, pitch and formant.
 
-Only on the dev server (`apps/twin/video-middleware.ts`, needs ffmpeg): the native macOS file dialog,
-subtitles embedded in the file (dropped or sidecar `.srt`/`.vtt` files work everywhere), and a live
-transcode for a picture the browser cannot show.
+Subtitles: text tracks inside MKV/WebM files (SRT, ASS, WebVTT) are read in the browser by
+`apps/twin/src/demos/mkv-subtitles.ts`, through the file's index when it lists them (a 7 GB film:
+about 200 MB read, about a second), else by one pass over the file. `.srt` and `.vtt` files can be
+picked or dropped with the video. Image subtitles (PGS, VobSub) cannot be drawn.
+
+## Patched dependencies
+
+pnpm applies these on every install (`patchedDependencies` in `pnpm-workspace.yaml`). Check each
+one when upgrading the package, and drop it once the package fixes the bug.
+
+| Patch | Why |
+|---|---|
+| [`patches/signalsmith-stretch@1.3.2.patch`](patches/signalsmith-stretch@1.3.2.patch) | In buffer mode the worklet went silent once the audio was in more than one buffer (`addBuffers` called more than once): its read loop advanced by the samples copied instead of to the end of each buffer. Not yet reported upstream. |
 
 ## Fixing a control mapping
 

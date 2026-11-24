@@ -46,20 +46,7 @@ interface AudioTrackInfo {
   readonly channels: number;
 }
 
-interface ProbeInfo {
-  readonly path: string;
-  readonly name: string;
-  readonly sizeBytes: number;
-  readonly duration: number;
-  readonly width: number;
-  readonly height: number;
-  readonly hdr: boolean;
-  readonly needsTranscode: boolean;
-  readonly audioTracks: ReadonlyArray<AudioTrackInfo>;
-  readonly subtitleTracks: ReadonlyArray<SubtitleTrackInfo>;
-}
-
-/** Embedded (`s:<n>`), a file next to the video (`f:<name>`), or a dropped file (`drop`). */
+/** Embedded in the video (`mkv:<track>`) or an .srt/.vtt file (`file:<name>`). */
 interface SubtitleTrackInfo {
   readonly id: string;
   readonly lang: string;
@@ -111,13 +98,10 @@ const GAG_BY_NOTE = new Map(GAG_PADS.map((p) => [p.note, p]));
 // ── Reactive UI Signals ──
 const [sourceLabel, setSourceLabel] = createSignal<string>('No video loaded');
 const [sourceMeta, setSourceMeta] = createSignal<string>('Select a video file or drop one here');
-const [pickingFile, setPickingFile] = createSignal(false);
-const [sourcePath, setSourcePath] = createSignal<string | null>(null);
-const [isTranscodedStream, setIsTranscodedStream] = createSignal(false);
 /** The audio comes from the file decoded in the browser (Mediabunny + Signalsmith); the <video> is muted. */
 const [decodedAudio, setDecodedAudio] = createSignal(false);
 /** What the decoded audio was opened from, to reopen it after switching back from Direct audio. */
-let decodeSource: Blob | string | null = null;
+let decodeSource: Blob | null = null;
 let decodeGen = 0;
 const [audioTracks, setAudioTracks] = createSignal<ReadonlyArray<AudioTrackInfo>>([]);
 const [audioTrackIdx, setAudioTrackIdx] = createSignal(0);
@@ -128,36 +112,21 @@ const [subtitleCues, setSubtitleCues] = createSignal<ReadonlyArray<Cue>>([]);
 /** Seconds the subtitles come later (+) or earlier (-) than the video, for files that are out of sync. */
 const [subtitleDelay, setSubtitleDelay] = createSignal(0);
 const [subtitleMsg, setSubtitleMsg] = createSignal<string | null>(null);
-let subtitleGen = 0;
+/** Every track's cues, by track id (embedded tracks fill in while the file is read). */
+const subtitleStore = new Map<string, ReadonlyArray<Cue>>();
+let subtitleScan: AbortController | null = null;
 
-/** Show a subtitle track (null hides subtitles). Embedded tracks and files come through the dev server. */
-async function selectSubtitleTrack(id: string | null) {
-  const gen = ++subtitleGen;
+/** Show a subtitle track (null hides subtitles). */
+function selectSubtitleTrack(id: string | null) {
   setSubtitleTrack(id);
-  setSubtitleMsg(null);
-  if (id === null || id === 'drop') { if (id === null) setSubtitleCues([]); return; }
-  const path = sourcePath();
-  if (!path) return;
-  setSubtitleCues([]);
-  setSubtitleMsg('Loading subtitles…');
-  try {
-    const res = await fetch(`/api/video/subtitles?path=${encodeURIComponent(path)}&track=${encodeURIComponent(id)}`);
-    const body = await res.text();
-    if (gen !== subtitleGen) return;
-    if (!res.ok) { setSubtitleMsg(`Subtitles: ${(JSON.parse(body) as { error?: string }).error ?? res.status}`); return; }
-    const cues = parseSubtitles(body);
-    setSubtitleCues(cues);
-    setSubtitleMsg(cues.length ? null : 'This subtitle track has no text');
-  } catch (err) {
-    if (gen === subtitleGen) setSubtitleMsg(`Subtitles: ${String(err)}`);
-  }
+  setSubtitleCues(id === null ? [] : subtitleStore.get(id) ?? []);
 }
 
 /** Off, then each track in turn. */
 function cycleSubtitles() {
   const ids: Array<string | null> = [null, ...subtitleTracks().map((t) => t.id)];
   const next = ids[(ids.indexOf(subtitleTrack()) + 1) % ids.length] ?? null;
-  void selectSubtitleTrack(next);
+  selectSubtitleTrack(next);
   const tr = subtitleTracks().find((t) => t.id === next);
   showHud('SUBTITLES', tr ? tr.label.toUpperCase() : 'OFF');
 }
@@ -169,19 +138,53 @@ function defaultSubtitleTrack(tracks: ReadonlyArray<SubtitleTrackInfo>): string 
   return (pool.find((t) => /^EN/.test(t.lang)) ?? pool[0])?.id ?? null;
 }
 
+/** An .srt or .vtt file, added as a track of its own and shown. */
 async function loadSubtitleFile(file: File) {
   const cues = parseSubtitles(await file.text());
-  if (!cues.length) { setSubtitleMsg('No subtitles found in that file (SRT or WebVTT)'); return; }
-  setSubtitleTracks([...subtitleTracks().filter((t) => t.id !== 'drop'), { id: 'drop', lang: 'FILE', label: 'Dropped file' }]);
-  subtitleGen++;
-  setSubtitleTrack('drop');
-  setSubtitleCues(cues);
+  if (!cues.length) { setSubtitleMsg(`No subtitles found in ${file.name} (SRT or WebVTT)`); return; }
+  const id = `file:${file.name}`;
+  subtitleStore.set(id, cues);
+  const lang = (/[._-]([a-z]{2,3})(?:[._-][^.]*)?\.(?:srt|vtt)$/i.exec(file.name)?.[1] ?? 'FILE').toUpperCase();
+  setSubtitleTracks([...subtitleTracks().filter((t) => t.id !== id), { id, lang, label: file.name.replace(/\.(srt|vtt)$/i, '') }]);
+  selectSubtitleTrack(id);
   setSubtitleMsg(null);
   showHud('SUBTITLES', `${cues.length} LINES`, 1.6);
 }
 
+/** Text subtitles inside the video file (Matroska: .mkv, .webm), read in the browser. */
+async function scanEmbeddedSubtitles(file: File) {
+  subtitleScan?.abort();
+  const scan = (subtitleScan = new AbortController());
+  const { scanMkvSubtitles, blobSource } = await import('./mkv-subtitles.ts');
+  let images = 0;
+  try {
+    await scanMkvSubtitles(blobSource(file), {
+      signal: scan.signal,
+      onTracks: (tracks) => {
+        if (scan.signal.aborted) return;
+        images = tracks.filter((t) => !t.text).length;
+        const text = tracks.filter((t) => t.text).map((t) => ({ id: `mkv:${t.number}`, lang: t.lang, label: `${t.name || t.lang}${t.forced ? ' (forced)' : ''}` }));
+        setSubtitleTracks([...text, ...subtitleTracks().filter((t) => t.id.startsWith('file:'))]);
+        if (subtitleTrack() === null) selectSubtitleTrack(defaultSubtitleTrack(text));
+        if (text.length) setSubtitleMsg('Reading subtitles…');
+      },
+      onCues: (n, cues) => {
+        if (scan.signal.aborted) return;
+        subtitleStore.set(`mkv:${n}`, cues);
+        if (subtitleTrack() === `mkv:${n}`) setSubtitleCues(cues);
+      },
+      onProgress: (f) => { if (!scan.signal.aborted) setSubtitleMsg(f < 1 ? `Reading subtitles… ${Math.round(f * 100)}%` : null); },
+    });
+    if (!scan.signal.aborted && images && !subtitleTracks().length) setSubtitleMsg('This file has only image subtitles (PGS), which cannot be shown here. Drop an .srt file.');
+  } catch {
+    // Not a Matroska file (MP4 and others): only dropped subtitle files.
+    if (!scan.signal.aborted) setSubtitleMsg(null);
+  }
+}
+
 function resetSubtitles() {
-  subtitleGen++;
+  subtitleScan?.abort();
+  subtitleStore.clear();
   setSubtitleTracks([]);
   setSubtitleTrack(null);
   setSubtitleCues([]);
@@ -254,20 +257,19 @@ function createVideoElement(): HTMLVideoElement {
   }
   v.addEventListener('loadedmetadata', () => {
     if (v !== video) return;
-    if (!isTranscodedStream() && Number.isFinite(v.duration)) {
+    if (Number.isFinite(v.duration)) {
       setDuration(v.duration);
     }
     setLoadingMsg(null);
   });
   v.addEventListener('playing', () => {
     if (v !== video) return;
-    isStreamSeeking = false;
     setPlaying(true);
     setLoadingMsg(null);
   });
   v.addEventListener('pause', () => {
     if (v !== video) return;
-    if (!isStreamSeeking) setPlaying(false);
+    setPlaying(false);
   });
   v.addEventListener('waiting', () => {
     if (v !== video) return;
@@ -275,7 +277,6 @@ function createVideoElement(): HTMLVideoElement {
   });
   v.addEventListener('canplay', () => {
     if (v !== video) return;
-    isStreamSeeking = false;
     setLoadingMsg(null);
   });
   v.addEventListener('seeked', () => {
@@ -283,16 +284,6 @@ function createVideoElement(): HTMLVideoElement {
   });
   v.addEventListener('error', () => {
     if (v !== video) return;
-    // A local file the browser cannot show: fall back to the dev server's live transcode.
-    const p = sourcePath();
-    if (p && !isTranscodedStream()) {
-      detachDecoded();
-      setIsTranscodedStream(true);
-      setSourceMeta(`${sourceMeta()} · transcoded by the dev server`);
-      openTranscodedStreamAt(p, getEffectiveTime(), audioTrackIdx(), true);
-      return;
-    }
-    isStreamSeeking = false;
     const code = v.error?.code;
     if (code) setErrorMsg(`This browser cannot show this video's picture (error ${code}). MP4, MKV and WebM with H.264, HEVC, AV1 or VP9 work.`);
     setLoadingMsg(null);
@@ -306,9 +297,7 @@ const audioEngine = new VideoAudioEngine();
 audioEngine.onStateChange((st) => setAudioState(st));
 if (import.meta.env.DEV) Object.assign(window, { videoAudio: audioEngine }); // for poking at the audio from DevTools
 let objectUrl: string | null = null;
-let streamOffset = 0; // For fragmented ffmpeg streams, video.currentTime is relative to streamOffset
 let pendingSeekTimer: number | null = null;
-let streamGeneration = 0;
 let lastPeakUiSec = 0;
 let silentFxSeconds = 0;
 
@@ -337,7 +326,6 @@ const lastFrameCtx = lastFrameCanvas.getContext('2d')!;
 let hasLastFrame = false;
 let lastFrameW = 0;
 let lastFrameH = 0;
-let isStreamSeeking = false;
 
 // Freeze-frame buffer + VFX scratch canvas
 const freezeCanvas = Object.assign(document.createElement('canvas'), { width: W, height: H });
@@ -396,47 +384,12 @@ function fmtSize(bytes: number): string {
 }
 
 function getEffectiveTime(): number {
-  const t = isTranscodedStream() ? streamOffset + (video.currentTime || 0) : (video.currentTime || 0);
+  const t = video.currentTime || 0;
   const dur = duration();
   return dur > 0 ? clamp(t, 0, dur) : Math.max(0, t);
 }
 
 // ── Video Loading & Seeking ──
-async function pickLocalVideoFile(fallbackInput?: HTMLInputElement | null) {
-  ensureAudioUnlocked();
-  if (pickingFile()) return;
-  // The deployed site has no dev server to open the macOS file dialog.
-  if (import.meta.env.PROD) { fallbackInput?.click(); return; }
-  setPickingFile(true);
-  setErrorMsg(null);
-  try {
-    const res = await fetch('/api/video/pick');
-    if (!res.ok) {
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (fallbackInput) {
-        fallbackInput.click();
-      } else if (data.error) {
-        setErrorMsg(data.error);
-      }
-      return;
-    }
-    const data = (await res.json()) as { path?: string; canceled?: boolean; error?: string };
-    if (data.canceled) return;
-    if (data.error) {
-      setErrorMsg(data.error);
-      return;
-    }
-    if (data.path) {
-      await loadLocalPath(data.path);
-    }
-  } catch {
-    // Static build has no /api/video/pick: fall back to browser file chooser
-    fallbackInput?.click();
-  } finally {
-    setPickingFile(false);
-  }
-}
-
 function revokeBlob() {
   if (objectUrl) {
     URL.revokeObjectURL(objectUrl);
@@ -452,7 +405,6 @@ function resetCropAndEcho() {
   echoHead = 0;
   freezeCaptured = false;
   hasLastFrame = false;
-  isStreamSeeking = false;
   setScrubTarget(null);
   if (pendingSeekTimer !== null) {
     clearTimeout(pendingSeekTimer);
@@ -471,7 +423,6 @@ function setAudioRouting(next: 'fx' | 'direct') {
   const t = getEffectiveTime();
   const wasPlaying = !video.paused || playing();
   const curSrc = video.src;
-  const p = sourcePath();
 
   setAudioMode(next);
   setSilentFxWarning(false);
@@ -499,10 +450,7 @@ function setAudioRouting(next: 'fx' | 'direct') {
   video.muted = muted();
   video.volume = clamp(volume(), 0, 1);
 
-  if (p && isTranscodedStream()) {
-    openTranscodedStreamAt(p, t, audioTrackIdx(), wasPlaying);
-  } else if (curSrc) {
-    streamOffset = 0;
+  if (curSrc) {
     video.src = curSrc;
     video.load();
     video.currentTime = t;
@@ -512,7 +460,7 @@ function setAudioRouting(next: 'fx' | 'direct') {
 }
 
 /** Decode the file's audio in the browser. Falls back to the <video>'s own audio when it cannot. */
-async function attachDecoded(source: Blob | string) {
+async function attachDecoded(source: Blob) {
   const gen = ++decodeGen;
   decodeSource = source;
   if (audioMode() !== 'fx') return;
@@ -525,7 +473,6 @@ async function attachDecoded(source: Blob | string) {
   }
   setDecodedAudio(true);
   video.muted = true;
-  setIsTranscodedStream(false);
   setAudioTracks(tracks.map((t) => ({ index: t.index, streamIndex: t.index, lang: t.lang, title: t.title, codec: t.codec, channels: t.channels })));
   const eng = tracks.findIndex((t) => /^EN/.test(t.lang));
   const idx = eng >= 0 ? eng : 0;
@@ -572,83 +519,21 @@ function togglePlay() {
   }
 }
 
-function openTranscodedStreamAt(filePath: string, startSec: number, audioIdx: number, autoPlay: boolean) {
-  const gen = ++streamGeneration;
-  const v = video;
-  isStreamSeeking = true;
-  streamOffset = Math.max(0, startSec);
-  setCurrentTime(streamOffset);
-  if (!hasLastFrame) {
-    setLoadingMsg(`Streaming @ ${fmtTime(streamOffset)}…`);
-  }
-  const url = `/api/video/stream?path=${encodeURIComponent(filePath)}&start=${streamOffset.toFixed(2)}&audio=${audioIdx}&_g=${gen}`;
-  v.src = url;
-  v.load();
-  const finishSeek = () => {
-    v.removeEventListener('canplay', finishSeek);
-    if (gen !== streamGeneration || v !== video) return;
-    isStreamSeeking = false;
-    setScrubTarget(null);
-    setLoadingMsg(null);
-    if (autoPlay) void startPlay();
-  };
-  v.addEventListener('canplay', finishSeek);
+const SUBTITLE_FILE = /\.(srt|vtt)$/i;
+
+/**
+ * Files picked or dropped: the first video plays (everything happens in the browser; nothing is
+ * uploaded), and every .srt/.vtt file becomes a subtitle track. Subtitles alone add to the current video.
+ */
+function loadFiles(files: ArrayLike<File> | null | undefined) {
+  const list = Array.from(files ?? []);
+  const subs = list.filter((f) => SUBTITLE_FILE.test(f.name));
+  const file = list.find((f) => !SUBTITLE_FILE.test(f.name));
+  if (file) loadVideoFile(file);
+  for (const sub of subs) void loadSubtitleFile(sub);
 }
 
-async function loadLocalPath(filePath: string, startAt = 0) {
-  // MUST run synchronously inside the click gesture before any await!
-  ensureAudioUnlocked();
-  setErrorMsg(null);
-  setLoadingMsg('Probing video…');
-  setSilentFxWarning(false);
-  silentFxSeconds = 0;
-  revokeBlob();
-  resetCropAndEcho();
-  setCues(Array(8).fill(null));
-
-  try {
-    const res = await fetch(`/api/video/probe?path=${encodeURIComponent(filePath)}`);
-    const data = (await res.json()) as ProbeInfo & { error?: string };
-    if (!res.ok || data.error) {
-      setLoadingMsg(null);
-      setErrorMsg(data.error ?? 'Failed to probe file');
-      return;
-    }
-
-    setSourcePath(data.path);
-    setSourceLabel('Video Loaded');
-    resetSubtitles();
-    setSubtitleTracks(data.subtitleTracks ?? []);
-    void selectSubtitleTrack(defaultSubtitleTrack(data.subtitleTracks ?? []));
-    setDuration(data.duration);
-    setAudioTracks(data.audioTracks);
-    const eng = data.audioTracks.find((a) => /^eng/i.test(a.lang));
-    setAudioTrackIdx(eng ? eng.index : 0);
-    setSourceMeta([`${data.width}×${data.height}`, data.hdr ? 'HDR' : 'SDR', fmtSize(data.sizeBytes), 'decoded in the browser'].join(' · '));
-
-    // The browser plays the file as it is and decodes its audio itself (any codec, including AC-3
-    // and DTS). If it cannot show the picture, the <video> error handler switches to a transcode.
-    detachDecoded();
-    setIsTranscodedStream(false);
-    streamOffset = 0;
-    setCurrentTime(startAt);
-    const rawUrl = `/api/video/stream?path=${encodeURIComponent(data.path)}&raw=1`;
-    video.src = rawUrl;
-    video.load();
-    video.currentTime = startAt;
-    setLoadingMsg(null);
-    void attachDecoded(rawUrl);
-    void startPlay();
-    showHud('VIDEO', 'LOADED', 2.0);
-  } catch (err) {
-    setLoadingMsg(null);
-    setErrorMsg(`Local bridge unavailable: ${String(err)}`);
-  }
-}
-
-function loadDroppedFile(file: File | undefined) {
-  if (!file) return;
-  if (/\.(srt|vtt)$/i.test(file.name)) { void loadSubtitleFile(file); return; }
+function loadVideoFile(file: File) {
   ensureAudioUnlocked();
   setErrorMsg(null);
   setLoadingMsg(null);
@@ -656,21 +541,19 @@ function loadDroppedFile(file: File | undefined) {
   silentFxSeconds = 0;
   revokeBlob();
   resetCropAndEcho();
-  setSourcePath(null);
-  setIsTranscodedStream(false);
   setAudioTracks([]);
   setAudioTrackIdx(0);
   resetSubtitles();
   setCues(Array(8).fill(null));
-  streamOffset = 0;
 
   detachDecoded();
   objectUrl = URL.createObjectURL(file);
   video.src = objectUrl;
   video.load();
   void attachDecoded(file);
+  void scanEmbeddedSubtitles(file);
   setSourceLabel('Video Loaded');
-  setSourceMeta(`${fmtSize(file.size)} · decoded in the browser (nothing uploaded)`);
+  setSourceMeta(`${fmtSize(file.size)} · played in the browser, nothing uploaded`);
   void startPlay();
   showHud('VIDEO', 'LOADED', 2.0);
 }
@@ -682,109 +565,41 @@ function commitSeekNow(targetSec: number) {
     clearTimeout(pendingSeekTimer);
     pendingSeekTimer = null;
   }
-
-  if (!video.src) {
-    setScrubTarget(null);
-    return;
-  }
-
-  if (!isTranscodedStream()) {
-    setCurrentTime(clamped);
-    setScrubTarget(null);
-    try { video.currentTime = clamped; } catch { /* ignore */ }
-    return;
-  }
-
-  // Live transcoded MKV stream: if target is already buffered, jump instantly with zero reload!
-  const rel = clamped - streamOffset;
-  if (rel >= 0 && video.buffered.length > 0) {
-    const bufEnd = video.buffered.end(video.buffered.length - 1);
-    if (rel <= bufEnd - 0.15) {
-      setCurrentTime(clamped);
-      setScrubTarget(null);
-      video.currentTime = rel;
-      return;
-    }
-  }
-
-  const p = sourcePath();
-  if (!p) {
-    setScrubTarget(null);
-    return;
-  }
-  const wasPlaying = !video.paused || playing();
-  openTranscodedStreamAt(p, clamped, audioTrackIdx(), wasPlaying);
+  setScrubTarget(null);
+  if (!video.src) return;
+  setCurrentTime(clamped);
+  try { video.currentTime = clamped; } catch { /* not seekable yet */ }
 }
 
 function commitPendingScrub() {
   const pending = scrubTarget();
-  if (pending !== null && pendingSeekTimer !== null) {
-    commitSeekNow(pending);
-  }
+  if (pending !== null && pendingSeekTimer !== null) commitSeekNow(pending);
 }
 
-function seekTo(targetSec: number, immediate = false, debounceMs = 380) {
+/** Jump at once, or (while a knob or the jog wheel turns) after a short pause in turning. */
+function seekTo(targetSec: number, immediate = false, debounceMs = 65) {
   const dur = duration();
   const clamped = dur > 0 ? clamp(targetSec, 0, Math.max(0, dur - 0.5)) : Math.max(0, targetSec);
-
   if (!video.src) {
     setCurrentTime(clamped);
     return;
   }
-
-  // Fast path: if already buffered (or immediate), commit right away with zero waiting
   if (immediate) {
     commitSeekNow(clamped);
     return;
   }
-
-  if (!isTranscodedStream()) {
-    setScrubTarget(clamped);
-    if (pendingSeekTimer !== null) clearTimeout(pendingSeekTimer);
-    pendingSeekTimer = window.setTimeout(() => commitSeekNow(clamped), 65);
-    return;
-  }
-
-  // Inside already-buffered window of MKV stream? Jump instantaneously without waiting!
-  const rel = clamped - streamOffset;
-  if (rel >= 0 && video.buffered.length > 0) {
-    const bufEnd = video.buffered.end(video.buffered.length - 1);
-    if (rel <= bufEnd - 0.15) {
-      if (pendingSeekTimer !== null) {
-        clearTimeout(pendingSeekTimer);
-        pendingSeekTimer = null;
-      }
-      setCurrentTime(clamped);
-      setScrubTarget(null);
-      video.currentTime = rel;
-      return;
-    }
-  }
-
-  // Otherwise keep current playback/frame smooth while user keeps turning the wheel,
-  // and commit once they pause turning for `debounceMs` (or immediately on touch release).
   setScrubTarget(clamped);
   if (pendingSeekTimer !== null) clearTimeout(pendingSeekTimer);
-  pendingSeekTimer = window.setTimeout(() => commitSeekNow(clamped), debounceMs);
+  pendingSeekTimer = window.setTimeout(() => commitSeekNow(clamped), Math.min(debounceMs, 120));
 }
 
 function switchAudioTrack(idx: number) {
   ensureAudioUnlocked();
   const tracks = audioTracks();
-  if (idx < 0 || idx >= tracks.length) return;
+  if (idx < 0 || idx >= tracks.length || !decodedAudio()) return;
   setAudioTrackIdx(idx);
-  if (decodedAudio()) {
-    audioEngine.selectDecodedTrack(idx);
-    showHud('AUDIO', `${tracks[idx]!.lang} · ${tracks[idx]!.title}`);
-    return;
-  }
-  const p = sourcePath();
-  if (p && isTranscodedStream()) {
-    const t = getEffectiveTime();
-    openTranscodedStreamAt(p, t, idx, !video.paused || playing());
-  }
-  const tr = tracks[idx]!;
-  showHud('AUDIO', `${tr.lang} · ${tr.title}`);
+  audioEngine.selectDecodedTrack(idx);
+  showHud('AUDIO', `${tracks[idx]!.lang} · ${tracks[idx]!.title}`);
 }
 
 function resetFx() {
@@ -1008,7 +823,7 @@ function drawRightDeck(
   // Row 1: Play state dot + Title + Audio track badge
   const isPlay = playing();
   const target = scrubTarget();
-  g.fillStyle = target !== null || isStreamSeeking
+  g.fillStyle = target !== null
     ? `rgba(56, 189, 248, ${0.55 + 0.45 * Math.sin(nowSec * 12)})`
     : isPlay ? '#3be68c' : '#ff9f43';
   g.beginPath();
@@ -1016,7 +831,7 @@ function drawRightDeck(
   g.fill();
 
   const tracks = audioTracks();
-  const trackTag = tracks[audioTrackIdx()]?.lang ?? (isTranscodedStream() ? 'STRM' : 'LOC');
+  const trackTag = tracks[audioTrackIdx()]?.lang ?? 'LOC';
   const badgeW = 40;
   g.fillStyle = '#181e28';
   g.fillRect(ix + iw - badgeW, 8, badgeW, 16);
@@ -1520,7 +1335,7 @@ export const videoDeck: Demo = {
         }
       }
 
-      if (!video.paused && video.readyState >= 2 && !isStreamSeeking) {
+      if (!video.paused && video.readyState >= 2) {
         setCurrentTime(getEffectiveTime());
       }
     }
@@ -1547,14 +1362,14 @@ export const videoDeck: Demo = {
         volume: eff.effVol,
       });
 
-      if (decodedAudio()) audioEngine.syncDecoded(getEffectiveTime(), !video.paused && video.readyState >= 2 && !isStreamSeeking);
+      if (decodedAudio()) audioEngine.syncDecoded(getEffectiveTime(), !video.paused && video.readyState >= 2);
 
       const peak = audioEngine.getPeakLevel();
       if (t - lastPeakUiSec >= 0.08) {
         lastPeakUiSec = t;
         setAudioPeak(peak);
       }
-      if (!video.paused && video.readyState >= 2 && !isStreamSeeking && eff.effVol > 0.05 && audioState() === 'running') {
+      if (!video.paused && video.readyState >= 2 && eff.effVol > 0.05 && audioState() === 'running') {
         if (peak > 0.002) {
           silentFxSeconds = 0;
           if (silentFxWarning()) setSilentFxWarning(false);
@@ -1825,8 +1640,7 @@ export const videoDeck: Demo = {
 
   Panel: () => {
     const [dragging, setDragging] = createSignal(false);
-    const [customPath, setCustomPath] = createSignal('');
-    let fallbackFileInput: HTMLInputElement | undefined;
+    let fileInput: HTMLInputElement | undefined;
 
     const pressGag = (note: number) => {
       if (note === 91) {
@@ -1852,43 +1666,26 @@ export const videoDeck: Demo = {
         <h2>Video Deck</h2>
         <p>Full-bleed 960×160 cinema mode. Hold <b>Shift + Upper</b> on Push to switch back to other demos.</p>
 
-        {/* Video File Picker + Drag & Drop */}
+        {/* File chooser + drag and drop: the file stays on this computer */}
         <div
           class="card-box drop vdeck-section"
           classList={{ over: dragging() }}
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
-          onDrop={(e) => { e.preventDefault(); setDragging(false); loadDroppedFile(e.dataTransfer?.files[0]); }}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); loadFiles(e.dataTransfer?.files); }}
         >
-          <button
-            type="button"
-            class="primary"
-            disabled={pickingFile()}
-            onClick={() => void pickLocalVideoFile(fallbackFileInput)}
-          >
-            {pickingFile() ? 'Opening File Picker…' : 'Select Video File…'}
+          <button type="button" class="primary" onClick={() => fileInput?.click()}>
+            Select Video File…
           </button>
-          <p class="muted">Supports MKV, MP4, MOV, WebM: or drop a video file here.</p>
+          <p class="muted">Or drop a video here (MKV, MP4, WebM), with .srt or .vtt subtitle files if you have them.</p>
           <input
-            ref={fallbackFileInput}
+            ref={fileInput}
             type="file"
+            multiple
             style={{ display: 'none' }}
             accept="video/*,.mkv,.webm,.srt,.vtt"
-            onChange={(e) => loadDroppedFile(e.currentTarget.files?.[0])}
+            onChange={(e) => { loadFiles(e.currentTarget.files); e.currentTarget.value = ''; }}
           />
-          <div class="vdeck-path-row">
-            <input
-              type="text"
-              class="full-input"
-              placeholder="Or enter a local video path…"
-              value={customPath()}
-              onInput={(e) => setCustomPath(e.currentTarget.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && customPath().trim()) void loadLocalPath(customPath().trim()); }}
-            />
-            <button type="button" onClick={() => { if (customPath().trim()) void loadLocalPath(customPath().trim()); }}>
-              Load
-            </button>
-          </div>
         </div>
 
         {/* Now Playing + Transport + Timeline */}
@@ -2048,7 +1845,7 @@ export const videoDeck: Demo = {
             <select
               class="vdeck-select"
               value={subtitleTrack() ?? ''}
-              onChange={(e) => void selectSubtitleTrack(e.currentTarget.value || null)}
+              onChange={(e) => selectSubtitleTrack(e.currentTarget.value || null)}
             >
               <option value="">Off</option>
               <For each={subtitleTracks()}>
@@ -2058,7 +1855,7 @@ export const videoDeck: Demo = {
           </div>
           <Show when={subtitleMsg()}><div class="vdeck-status warn">{subtitleMsg()}</div></Show>
           <Show when={subtitleTracks().length === 0 && sourceLabel() !== 'No video loaded'}>
-            <div class="muted">No text subtitles in this video. Drop an .srt or .vtt file here.</div>
+            <div class="muted">No subtitles in this video. Drop an .srt or .vtt file here.</div>
           </Show>
           <Show when={subtitleTrack() !== null}>
             <div class="vdeck-slider">

@@ -21,16 +21,20 @@ export function parseSubtitles(raw: string): Array<Cue> {
     const [a, b] = lines[at]!.split('-->');
     const ma = a?.match(TIME), mb = b?.match(TIME);
     if (!ma || !mb) continue;
-    const text = lines
-      .slice(at + 1)
-      .join('\n')
-      .replace(/<[^>]+>/g, '') // <i>, <b>, <font>, <c.x>, voice tags
-      .replace(/\{\\[^}]*\}/g, '') // ASS override codes such as {\an8}
-      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-      .trim();
+    const text = cleanCueText(lines.slice(at + 1).join('\n'));
     if (text) cues.push({ start: seconds(ma), end: seconds(mb), text });
   }
   return cues.sort((x, y) => x.start - y.start);
+}
+
+/** Plain text of a cue: tags and formatting codes removed. */
+export function cleanCueText(raw: string): string {
+  return raw
+    .replace(/\r/g, '')
+    .replace(/<[^>]+>/g, '') // <i>, <b>, <font>, <c.x>, voice tags
+    .replace(/\{\\[^}]*\}/g, '') // ASS override codes such as {\an8}
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .trim();
 }
 
 /** The cues showing at time t (usually one; overlapping cues stack). */
