@@ -88,19 +88,19 @@ apps/twin/src/           Browser: Vite + Solid
 - **Plain TS** handles everything that runs per frame or per MIDI message.
 - **Solid** handles the DOM. Its fine-grained signals update only what changed, and it coexists with the imperative Three.js and canvas code.
 
-## Tabs (upper display buttons 1-9, or keys 1-8)
+## Tabs (upper display buttons 1-8 on the Push, or keys 1-9)
 
 | Tab | Shows off |
 |---|---|
-| Explore | Every control mirrored. Velocity-colored pads, knob gauges on the screen |
-| Test | Coverage checklist: every pad/button/knob you use turns green. Palette sweep, screen test pattern |
+| Video | A film on the Push screen beside a live effects deck: speed, pitch, voice size, DJ filter, echo, drive, visual effects, framings, subtitles; pads trigger gags |
+| Explore | Every control mirrored. Velocity-colored pads, knob gauges on the screen. The first tab on a first visit |
 | Paint | Pads as an 8×8 canvas; knobs = hue/sat/brightness |
 | Expression | Channel AT / Poly AT / MPE modes, per-finger pressure + roll + slide, Web Audio synth |
 | Ripple | Light show from the browser every frame, or the Push's own hardware pulse/blink animation |
 | CSS Knobs | 8 knobs → 8 CSS custom properties on a live card, presets on pads, generated CSS |
 | Screen | Scrolling text, plasma, dropped images, clock on the Push display; pads mirror it |
 | Snake | A game on the pad grid (arrows, jog wheel or pads to steer) |
-| Video | A film on the Push screen beside a live effects deck: speed, pitch, formant, DJ filter, visual effects, framings, subtitles; pads trigger gags |
+| Test | Coverage checklist: every pad/button/knob you use turns green. Palette sweep, screen test pattern. Ninth tab: on the page only (no Push button) |
 
 ### Video deck: what runs where
 

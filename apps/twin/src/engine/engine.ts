@@ -100,7 +100,11 @@ export class Engine {
     const [linkKind, setLinkKind] = createSignal<LinkKind | null>(null);
     const wantedDemo = new URLSearchParams(location.search).get('demo');
     const wantedIdx = wantedDemo ? demos.findIndex((d) => d.id === wantedDemo) : -1;
-    const initialIdx = wantedIdx >= 0 ? wantedIdx : Math.min(demos.length - 1, Math.max(0, store.get('demo', 0)));
+    // The last tab, by id (an index would point at another tab when the order changes). A first visit
+    // starts on Explore: it works without a Push or a video file.
+    const saved = store.get<unknown>('demo', 'explore');
+    const savedIdx = demos.findIndex((d) => d.id === saved);
+    const initialIdx = wantedIdx >= 0 ? wantedIdx : savedIdx >= 0 ? savedIdx : Math.max(0, demos.findIndex((d) => d.id === 'explore'));
     const [demoIndex, setDemoIndex] = createSignal(initialIdx);
     const [log, setLog] = createSignal<ReadonlyArray<LogEntry>>([]);
     const [sent, setSent] = createSignal(0);
@@ -215,7 +219,7 @@ export class Engine {
     const next = this.demos[i];
     if (!next || next === this.demo) return;
     this.set.demoIndex(i);
-    store.set('demo', i);
+    store.set('demo', next.id);
     this.activate(next);
   }
 

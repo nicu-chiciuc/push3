@@ -14,7 +14,9 @@ import { snake } from './demos/snake.tsx';
 import { videoDeck } from './demos/video.tsx';
 import './styles.css';
 
-const engine = new Engine([explore, test, paint, expression, ripple, cssKnobs, studio, snake, videoDeck]);
+// The first 8 tabs sit on the 8 upper display buttons. Test is a diagnostic tool, not a show: it is the
+// ninth tab, reached from the page (tab list or key 9) only.
+const engine = new Engine([videoDeck, explore, paint, expression, ripple, cssKnobs, studio, snake, test]);
 Object.assign(window, { push3: engine }); // handy for poking at things from DevTools
 
 // Which transport: ?link=bridge|direct, else the local bridge on localhost and direct everywhere else.

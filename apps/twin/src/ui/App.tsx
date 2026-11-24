@@ -313,7 +313,7 @@ const DemosPane: Component<{ engine: Engine }> = (props) => {
                   class="tab"
                   classList={{ active: e.demoIndex() === i() }}
                   style={{ '--c': css(d.color) }}
-                  title={`${d.name} (upper display button ${i() + 1} on Push, key ${i() + 1})`}
+                  title={i() < 8 ? `${d.name} (upper display button ${i() + 1} on Push, key ${i() + 1})` : `${d.name} (key ${i() + 1}; no button on Push)`}
                   onClick={() => e.switchDemo(i())}
                 >
                   <span class="tab-led" aria-hidden="true" />

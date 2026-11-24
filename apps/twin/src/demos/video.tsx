@@ -1680,7 +1680,7 @@ export const videoDeck: Demo = {
     return (
       <div class="vdeck">
         <h2>Video Deck</h2>
-        <p>Full-bleed 960×160 cinema mode. Hold <b>Shift + Upper</b> on Push to switch back to other demos.</p>
+        <p>Full-bleed 960×160 cinema mode. The upper display buttons on Push switch to the other tabs.</p>
 
         {/* File chooser + drag and drop: the file stays on this computer */}
         <div
