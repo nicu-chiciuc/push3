@@ -1,5 +1,5 @@
 {
-  "status": "updating",
+  "status": "updated",
   "fqn": "Site",
   "logicalId": "Site",
   "instanceId": "f578b2d5f1ebf7736801c554bcf8615f",
@@ -44,77 +44,17 @@
     "routes": [],
     "crons": [],
     "tailConsumers": [],
-    "versionId": "d7b7593a-c849-409e-85da-09e743845f79",
-    "deploymentId": "30f7024f-e9f9-465f-969f-a143d5ae9b11",
+    "versionId": "f9741b1e-cb5e-42b9-bf06-0cdc9c9998e5",
+    "deploymentId": "9afdf0a4-ae27-4681-892b-559d3ab2a4fb",
     "secretNames": [],
     "hash": {
-      "assets": "07e2317a196b9fe9e9695a22c448d9be3cbeccda6173920bf8f92cecad2bd6f6",
+      "assets": "2e146e3dbd003adc5ecf0be254ec3f3203367698132027b4f9f91529b35c6e3f",
       "metadata": "28a9399c82896b47ae447619fedd065c1762929710c74114f416c832f1c9d087"
     }
   },
-  "providerVersion": 0,
   "bindings": [],
+  "providerVersion": 0,
   "downstream": [],
-  "old": {
-    "status": "updated",
-    "fqn": "Site",
-    "logicalId": "Site",
-    "instanceId": "f578b2d5f1ebf7736801c554bcf8615f",
-    "resourceType": "Cloudflare.Worker",
-    "props": {
-      "name": "push3-twin",
-      "domain": "push.tsx.md",
-      "assets": {
-        "directory": "./dist",
-        "notFoundHandling": "single-page-application"
-      },
-      "compatibility": {
-        "date": "2026-11-01"
-      },
-      "workersDev": {
-        "enabled": true,
-        "previewsEnabled": true
-      },
-      "isExternal": true
-    },
-    "attr": {
-      "workerId": "89730121a7ff4acdab02e9fb095b73b5",
-      "workerName": "push3-twin",
-      "logpush": false,
-      "url": "https://push.tsx.md",
-      "urls": [
-        "https://push.tsx.md",
-        "https://push3-twin.pfp.workers.dev"
-      ],
-      "domain": {
-        "name": "push.tsx.md",
-        "aliases": [],
-        "redirects": []
-      },
-      "tags": [
-        "alchemy:stack:nicu-chiciuc/push3-twin",
-        "alchemy:stage:prod",
-        "alchemy:id:Site"
-      ],
-      "durableObjectNamespaces": {},
-      "accountId": "fe57d01d7ab41f60d00ba1aade20eb33",
-      "routes": [],
-      "crons": [],
-      "tailConsumers": [],
-      "versionId": "d7b7593a-c849-409e-85da-09e743845f79",
-      "deploymentId": "30f7024f-e9f9-465f-969f-a143d5ae9b11",
-      "secretNames": [],
-      "hash": {
-        "assets": "07e2317a196b9fe9e9695a22c448d9be3cbeccda6173920bf8f92cecad2bd6f6",
-        "metadata": "28a9399c82896b47ae447619fedd065c1762929710c74114f416c832f1c9d087"
-      }
-    },
-    "bindings": [],
-    "providerVersion": 0,
-    "downstream": [],
-    "removalPolicy": "retain",
-    "providerMode": "live"
-  },
   "removalPolicy": "retain",
   "providerMode": "live"
 }
