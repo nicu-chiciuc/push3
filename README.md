@@ -73,7 +73,10 @@ packages/node/src/       Node, run directly as TypeScript (Node's type stripping
   Server.ts              HTTP (optional static app) + WebSocket on 127.0.0.1, as a scoped Layer
   main.ts                push3-bridge: Layer.launch + NodeRuntime.runMain
 apps/twin/src/           Browser: Vite + Solid
-  engine/        Plain TypeScript hot path: 60 fps loop, screen canvas, Three.js twin (twin.ts, layout.ts)
+  engine/        Plain TypeScript hot path: 60 fps loop, screen canvas, Three.js twin (twin.ts)
+  engine/twin/   The twin's model: layout.ts (every control in mm, traced from a top-down photo),
+                 shapes.ts (rounded slabs, triangle keys, turned knobs), labels.ts (backlit legends
+                 and icons as vector paths), textures.ts (surface grain, pad glow)
   demos/*.tsx    One file per tab: onEvent / tick / draw (hot path) + a Solid Panel component.
                  Each tab is an Effect fiber; `activate` acquires device modes in its Scope,
                  e.g. `app.usePressureMode('mpe')`, and they're restored when you switch tabs.
@@ -99,7 +102,7 @@ apps/twin/src/           Browser: Vite + Solid
 
 ## Fixing a control mapping
 
-`packages/protocol/src/controls.ts` holds the MIDI number of every control. Its numbers come from Ableton's Push 2 spec plus community Push 3 notes. If the Test tab shows a button as "Unmapped", fix it there. Where a control sits on the 3D model is in `apps/twin/src/engine/layout.ts`.
+`packages/protocol/src/controls.ts` holds the MIDI number of every control. Its numbers come from Ableton's Push 2 spec plus community Push 3 notes. If the Test tab shows a button as "Unmapped", fix it there. Where a control sits on the 3D model, and what is printed on it, is in `apps/twin/src/engine/twin/layout.ts`.
 
 ## Protocol sources
 

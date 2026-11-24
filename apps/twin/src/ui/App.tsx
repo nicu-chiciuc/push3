@@ -33,7 +33,7 @@ export const App: Component<{ engine: Engine }> = (props) => {
       if (!s.midi) return { tone: 'info', text: 'Screen connected. Click “Connect Push” and allow MIDI to use pads and lights.' };
       return null;
     }
-    if (!s.link) return { tone: 'bad', text: 'Bridge offline: run `npm run dev` in the push3-twin folder, or switch to Direct mode (Chrome/Edge, nothing to install).' };
+    if (!s.link) return { tone: 'bad', text: 'Bridge offline: run `pnpm dev` in the push3-twin folder, or switch to Direct mode (Chrome/Edge, nothing to install).' };
     if (!s.midi) return { tone: 'bad', text: 'Push 3 not found: plug it in and make sure Ableton Live is closed.' };
     if (!s.display) return { tone: 'bad', text: 'Push screen busy: quit Ableton Live (its background “Push3” process holds the display).' };
     return null;
