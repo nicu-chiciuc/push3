@@ -107,7 +107,7 @@ export const test: Demo = {
         <Show when={unmapped().length}>
           <p class="warn-text">Unmapped: <For each={unmapped()}>{([cc, n]) => <code>CC {cc} ×{n} </code>}</For></p>
         </Show>
-        <p class="muted">If a button lights up the wrong spot in 3D, or shows under “Unmapped”, its MIDI number differs from our map. Tell Claude which button and the CC from the log, and it can fix <code>src/app/engine/layout.ts</code>.</p>
+        <p class="muted">If a button lights up the wrong spot or appears under Unmapped, check its CC in the Event log and update <code>packages/protocol/src/controls.ts</code>.</p>
       </>
     );
   },

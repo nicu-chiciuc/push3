@@ -6,7 +6,7 @@ import { Effect, Fiber, type Scope } from 'effect';
 import { describe, ENCODERS, hex, PushController, scale, type Bytes, type MidiPort, type PressureMode, type PushEvent, type RGB } from '@push3/protocol';
 import type { LinkKind, LinkStatus } from '@push3/web';
 import { Screen } from './screen.ts';
-import { Twin } from './twin.ts';
+import { Twin, type View } from './twin.ts';
 
 export interface Demo {
   readonly id: string;
@@ -75,15 +75,19 @@ export class Engine {
   readonly seenVersion: Accessor<number>;
   readonly logPaused: Accessor<boolean>;
   readonly logContinuous: Accessor<boolean>;
+  readonly cameraView: Accessor<View>;
+  readonly cameraMoved: Accessor<boolean>;
   private readonly set: {
     status: (s: Status) => void; linkKind: (k: LinkKind) => void; demoIndex: (i: number) => void; log: (fn: (l: ReadonlyArray<LogEntry>) => ReadonlyArray<LogEntry>) => void;
     sent: (n: number) => void; seenVersion: (n: number) => void; logPaused: (b: boolean) => void; logContinuous: (b: boolean) => void;
+    cameraView: (v: View) => void; cameraMoved: (b: boolean) => void;
   };
 
   private link: Link | null = null;
   private demoFiber: Fiber.Fiber<never, never> | null = null;
   private logBuf: Array<LogEntry> = [];
   private seenDirty = false;
+  private mobileTouch = false;
   private last = performance.now();
 
   readonly demos: ReadonlyArray<Demo>;
@@ -98,6 +102,8 @@ export class Engine {
     const [seenVersion, setSeenVersion] = createSignal(0);
     const [logPaused, setLogPaused] = createSignal(false);
     const [logContinuous, setLogContinuous] = createSignal(false);
+    const [cameraView, setCameraView] = createSignal<View>('angled');
+    const [cameraMoved, setCameraMoved] = createSignal(false);
     this.status = status;
     this.linkKind = linkKind;
     this.demoIndex = demoIndex;
@@ -106,7 +112,13 @@ export class Engine {
     this.seenVersion = seenVersion;
     this.logPaused = logPaused;
     this.logContinuous = logContinuous;
-    this.set = { status: setStatus, linkKind: setLinkKind, demoIndex: setDemoIndex, log: setLog, sent: setSent, seenVersion: setSeenVersion, logPaused: setLogPaused, logContinuous: setLogContinuous };
+    this.cameraView = cameraView;
+    this.cameraMoved = cameraMoved;
+    this.set = {
+      status: setStatus, linkKind: setLinkKind, demoIndex: setDemoIndex, log: setLog, sent: setSent,
+      seenVersion: setSeenVersion, logPaused: setLogPaused, logContinuous: setLogContinuous,
+      cameraView: setCameraView, cameraMoved: setCameraMoved,
+    };
   }
 
   get demo(): Demo { return this.demos[this.demoIndex()]!; }
@@ -114,10 +126,26 @@ export class Engine {
   /** Create the 3D twin in `stage` and start the frame loop. */
   mount(stage: HTMLElement) {
     this.twin = new Twin(stage, this.screen.canvas);
+    this.twin.setMobileTouch(this.mobileTouch);
+    this.twin.onCameraMoved((moved) => this.set.cameraMoved(moved));
     this.leds.onChange((key, s) => this.twin.setLed(key, s));
     this.twin.on((ev) => this.handle(ev, 'virtual'));
     this.activate(this.demo);
     requestAnimationFrame(this.frame);
+  }
+
+  setCameraView(v: View) {
+    this.set.cameraView(v);
+    this.twin?.setView(v, true);
+  }
+
+  resetCamera() {
+    this.twin?.resetView();
+  }
+
+  setMobileTouch(mobile: boolean) {
+    this.mobileTouch = mobile;
+    this.twin?.setMobileTouch(mobile);
   }
 
   attach(link: Link) { this.link = link; this.set.linkKind(link.kind); }

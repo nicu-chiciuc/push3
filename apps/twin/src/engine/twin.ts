@@ -14,12 +14,20 @@ import { legendTexture } from './twin/labels.ts';
 import { knob, roundedPoly, roundedRect, slab } from './twin/shapes.ts';
 import { contactShadowTexture, grainOver, grainTexture, padGlowTexture, woodTexture } from './twin/textures.ts';
 
-export type View = 'angled' | 'top' | 'front';
+export type View = 'angled' | 'top';
 type Ctrl = { kind: 'pad'; note: number } | { kind: 'button'; cc: number; id: string; label: string } | { kind: 'encoder'; id: string } | { kind: 'strip' };
 interface PadVis { mesh: THREE.Mesh; mat: THREE.MeshPhysicalMaterial; dot: THREE.Mesh; down: boolean; pressure: number; x: number; y: number; depth: number }
 interface KeyVis { geo: KeyGeo; shade: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>; legend: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial> | null; bar: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null; rgb: boolean; pressed: boolean; depth: number }
 interface EncoderVis { geo: KnobGeo; steps: number; spinner: THREE.Group; tick: THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial>; active: number; ring: THREE.Mesh<THREE.TorusGeometry, THREE.MeshBasicMaterial>; angle: number; shown: number; touched: boolean; mark: number | null; pressDepth: number; nudge: number }
 type Drag = { ctrl: Ctrl; lastY: number; acc: number };
+interface CameraAnim {
+  fromPos: THREE.Vector3;
+  toPos: THREE.Vector3;
+  fromTarget: THREE.Vector3;
+  toTarget: THREE.Vector3;
+  elapsed: number;
+  duration: number;
+}
 
 /** Scene units per millimeter: the device is about 13.5 units wide. */
 const MM = 1 / 28;
@@ -27,11 +35,11 @@ const X = (mm: number) => (mm - DEVICE.w / 2) * MM;
 const Z = (mm: number) => (mm - DEVICE.d / 2) * MM;
 const SRGB = THREE.SRGBColorSpace;
 const TOP = 0; // the top plate of the device is at y = 0
+const DEFAULT_TARGET = new THREE.Vector3(0, 0, 0.25);
 
 const VIEWS: Record<View, THREE.Vector3> = {
-  angled: new THREE.Vector3(0, 1.08, 0.92).normalize(),
+  angled: new THREE.Vector3(0, 1.12, 0.88).normalize(),
   top: new THREE.Vector3(0, 1, 0.0001).normalize(),
-  front: new THREE.Vector3(0, 0.42, 1).normalize(),
 };
 
 /** Legend print when the key is dark, and the LED color when lit. */
@@ -42,6 +50,7 @@ const BAR_OFF = new THREE.Color(0x4a4c50);
 export class Twin {
   private readonly container: HTMLElement;
   private readonly listeners = new Set<(ev: PushEvent) => void>();
+  private readonly cameraMovedListeners = new Set<(moved: boolean) => void>();
   private readonly pads = new Map<number, PadVis>();
   private readonly keys = new Map<number, KeyVis>();
   private readonly encoders = new Map<string, EncoderVis>();
@@ -64,6 +73,8 @@ export class Twin {
   private stripZ1 = 0;
   private view: View = 'angled';
   private userMoved = false;
+  private cameraAnim: CameraAnim | null = null;
+  private mobileTouch = false;
   private drag: Drag | null = null;
   private hoverPending = false;
   private readonly rubber: THREE.MeshPhysicalMaterial;
@@ -83,6 +94,15 @@ export class Twin {
   }
 
   on(fn: (ev: PushEvent) => void) { this.listeners.add(fn); }
+  onCameraMoved(fn: (moved: boolean) => void) {
+    this.cameraMovedListeners.add(fn);
+    fn(this.userMoved);
+  }
+  #setUserMoved(moved: boolean) {
+    if (this.userMoved === moved) return;
+    this.userMoved = moved;
+    for (const fn of this.cameraMovedListeners) fn(moved);
+  }
   #emit(ev: PushEvent) { ev.virtual = true; for (const fn of this.listeners) fn(ev); }
 
   #init(screenCanvas: HTMLCanvasElement) {
@@ -104,11 +124,15 @@ export class Twin {
     this.camera = new THREE.PerspectiveCamera(30, 1, 1, 220); // a far-off near plane keeps depth precise for thin decals
     this.controls = new OrbitControls(this.camera, r.domElement);
     this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
     this.controls.maxPolarAngle = Math.PI * 0.48;
     this.controls.minDistance = 6;
     this.controls.maxDistance = 110; // a phone in portrait needs about 55 to fit the whole device
-    this.controls.target.set(0, 0, 0.3);
-    this.controls.addEventListener('start', () => { this.userMoved = true; });
+    this.controls.target.copy(DEFAULT_TARGET);
+    this.controls.addEventListener('start', () => {
+      this.cameraAnim = null;
+      this.#setUserMoved(true);
+    });
 
     // Neutral light, mostly from above like a product shoot under soft boxes.
     scene.add(new THREE.HemisphereLight(0xf2f2f2, 0x1c1c1e, 0.5));
@@ -146,7 +170,7 @@ export class Twin {
     this.#bindPointer();
     new ResizeObserver(() => this.resize()).observe(this.container);
     this.resize();
-    this.setView('angled');
+    this.setView('angled', false);
   }
 
   // ───────── geometry ─────────
@@ -155,8 +179,8 @@ export class Twin {
    * to the dark page at its edges, so the desk has no visible border.
    */
   #buildDesk() {
-    const deskW = 1800, deskD = 1400, offsetZ = 100; // mm; a little more desk in front of the device than behind
-    const geo = new THREE.PlaneGeometry(deskW * MM, deskD * MM, 64, 44);
+    const deskW = 2600, deskD = 2600, offsetZ = 100; // mm; large enough that the light pool fades to black before the edge even on tall portrait phones
+    const geo = new THREE.PlaneGeometry(deskW * MM, deskD * MM, 72, 72);
     const pos = geo.getAttribute('position') as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
     for (let i = 0; i < pos.count; i++) {
@@ -490,7 +514,7 @@ export class Twin {
     }
   }
 
-  // ───────── mouse → virtual events ─────────
+  // ───────── mouse & touch → virtual events ─────────
   #bindPointer() {
     const el = this.renderer.domElement;
     const ray = new THREE.Raycaster();
@@ -516,13 +540,39 @@ export class Twin {
     };
     const stripValue = (pt: THREE.Vector3) => Math.max(0, Math.min(1, (this.stripZ0 - pt.z) / (this.stripZ0 - this.stripZ1)));
 
+    const releaseDrag = (pointerId?: number) => {
+      const d = this.drag;
+      if (!d) return;
+      this.drag = null;
+      this.controls.enabled = true;
+      if (pointerId !== undefined) {
+        try { el.releasePointerCapture(pointerId); } catch {}
+      }
+      if (d.ctrl.kind === 'pad') this.#emit({ type: 'pad', action: 'up', note: d.ctrl.note, ...padPos(d.ctrl.note), ch: 0 });
+      else if (d.ctrl.kind === 'button') this.#emit({ type: 'button', id: d.ctrl.id, cc: d.ctrl.cc, label: d.ctrl.label, pressed: false });
+      else if (d.ctrl.kind === 'encoder') this.#emit({ type: 'touch', id: d.ctrl.id, touched: false });
+      else if (d.ctrl.kind === 'strip') this.#emit({ type: 'touch', id: 'strip', touched: false });
+    };
+
+    // On mobile carousel mode, 1-finger horizontal swipes natively scroll sidebars-solid (`pan-x`),
+    // while 2-finger pinch/rotate owns the 3D camera. Cancel any 1-finger control press if a 2nd finger lands.
+    const preventMultiTouchScroll = (e: TouchEvent) => {
+      if (!this.mobileTouch || e.touches.length < 2) return;
+      if (this.drag) releaseDrag();
+      e.preventDefault();
+    };
+    el.addEventListener('touchstart', preventMultiTouchScroll, { passive: false });
+    el.addEventListener('touchmove', preventMultiTouchScroll, { passive: false });
+
+    // Capture phase so clicking/tapping a Push control never triggers OrbitControls.
     el.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
       const hit = pick(e);
       if (!hit) return;
+      e.stopImmediatePropagation();
       const ctrl: Ctrl = hit.object.userData.ctrl;
       this.controls.enabled = false;
-      el.setPointerCapture(e.pointerId);
+      try { el.setPointerCapture(e.pointerId); } catch {}
       this.drag = { ctrl, lastY: e.clientY, acc: 0 };
       if (ctrl.kind === 'pad') {
         this.#emit({ type: 'pad', action: 'down', note: ctrl.note, ...padPos(ctrl.note), velocity: 100, ch: 0 });
@@ -538,12 +588,12 @@ export class Twin {
         this.#emit({ type: 'touch', id: 'strip', touched: true });
         this.#emit({ type: 'strip', value: stripValue(hit.point) });
       }
-    });
+    }, { capture: true });
 
     el.addEventListener('pointermove', (e) => {
       const d = this.drag;
       if (!d) {
-        if (!this.hoverPending) {
+        if (e.pointerType !== 'touch' && !this.hoverPending) {
           this.hoverPending = true;
           requestAnimationFrame(() => { this.hoverPending = false; el.style.cursor = pick(e) ? 'pointer' : 'grab'; });
         }
@@ -568,39 +618,74 @@ export class Twin {
       }
     });
 
-    const end = (e: PointerEvent) => {
-      const d = this.drag;
-      if (!d) return;
-      this.drag = null;
-      this.controls.enabled = true;
-      try { el.releasePointerCapture(e.pointerId); } catch {}
-      if (d.ctrl.kind === 'pad') this.#emit({ type: 'pad', action: 'up', note: d.ctrl.note, ...padPos(d.ctrl.note), ch: 0 });
-      else if (d.ctrl.kind === 'button') this.#emit({ type: 'button', id: d.ctrl.id, cc: d.ctrl.cc, label: d.ctrl.label, pressed: false });
-      else if (d.ctrl.kind === 'encoder') this.#emit({ type: 'touch', id: d.ctrl.id, touched: false });
-      else if (d.ctrl.kind === 'strip') this.#emit({ type: 'touch', id: 'strip', touched: false });
-    };
+    const end = (e: PointerEvent) => releaseDrag(e.pointerId);
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
+
+    // Double-clicking the empty desk glides the camera back to its framed view.
+    el.addEventListener('dblclick', (e) => {
+      const rect = el.getBoundingClientRect();
+      ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+      ray.setFromCamera(ndc, this.camera);
+      if (!ray.intersectObjects(this.scene.children, true).some((h) => h.object.userData.ctrl)) {
+        this.resetView();
+      }
+    });
+  }
+
+  /**
+   * When the mobile swipe carousel is active, delegate 1-finger horizontal drags (`pan-x`) to the
+   * carousel so swiping works anywhere on the stage, and use 2 fingers to pinch-zoom & orbit 3D.
+   */
+  setMobileTouch(mobile: boolean) {
+    this.mobileTouch = mobile;
+    const el = this.renderer.domElement;
+    if (mobile) {
+      el.style.touchAction = 'pan-x';
+      this.controls.touches = { ONE: null, TWO: THREE.TOUCH.DOLLY_ROTATE };
+    } else {
+      el.style.touchAction = 'none';
+      this.controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+    }
   }
 
   // ───────── view ─────────
-  setView(name: View) {
+  setView(name: View, animate = true) {
     this.view = name;
-    this.userMoved = false;
-    const dist = this.#fitDistance();
-    this.camera.position.copy(this.controls.target).addScaledVector(VIEWS[name], dist);
-    this.controls.update();
+    this.#setUserMoved(false);
+    const toTarget = DEFAULT_TARGET.clone();
+    const dist = this.#fitDistance(name, toTarget);
+    const toPos = toTarget.clone().addScaledVector(VIEWS[name], dist);
+    if (!animate || this.camera.position.distanceTo(toPos) < 0.01) {
+      this.cameraAnim = null;
+      this.controls.target.copy(toTarget);
+      this.camera.position.copy(toPos);
+      this.controls.update();
+      return;
+    }
+    this.cameraAnim = {
+      fromPos: this.camera.position.clone(),
+      toPos,
+      fromTarget: this.controls.target.clone(),
+      toTarget,
+      elapsed: 0,
+      duration: 0.34,
+    };
+  }
+
+  resetView() {
+    this.setView(this.view, true);
   }
 
   /** The closest distance at which every corner of the device (with its knobs) is inside the view. */
-  #fitDistance() {
-    const cam = this.camera, target = this.controls.target, dir = VIEWS[this.view];
+  #fitDistance(name: View, target: THREE.Vector3) {
+    const cam = this.camera.clone();
+    const dir = VIEWS[name];
     cam.updateProjectionMatrix();
     const hw = (DEVICE.w / 2) * MM, hd = (DEVICE.d / 2) * MM, top = 16 * MM, bottom = -DEVICE.h * MM;
     const corners: Array<THREE.Vector3> = [];
     for (const x of [-hw, hw]) for (const y of [bottom, top]) for (const z of [-hd, hd]) corners.push(new THREE.Vector3(x, y, z));
-    // Leave room for the hint above and the toolbar below the model.
-    const marginX = 0.94, marginY = 0.84;
+    const marginX = 0.93, marginY = 0.88;
     const fits = (d: number) => {
       cam.position.copy(target).addScaledVector(dir, d);
       cam.lookAt(target);
@@ -619,16 +704,23 @@ export class Twin {
     this.composer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    if (!this.userMoved) this.setView(this.view);
+    if (!this.userMoved) this.setView(this.view, false);
   }
-
-  setBloom(on: boolean) { this.bloom.enabled = on; }
 
   // ───────── per frame ─────────
   render(screenVersion: number) {
     const dt = Math.min(0.05, this.clock.getDelta());
     const t = this.clock.elapsedTime;
     const ease = (cur: number, target: number, k: number) => cur + (target - cur) * Math.min(1, dt * k);
+
+    if (this.cameraAnim) {
+      this.cameraAnim.elapsed += dt;
+      const u = Math.min(1, this.cameraAnim.elapsed / this.cameraAnim.duration);
+      const k = 1 - (1 - u) ** 3;
+      this.camera.position.lerpVectors(this.cameraAnim.fromPos, this.cameraAnim.toPos, k);
+      this.controls.target.lerpVectors(this.cameraAnim.fromTarget, this.cameraAnim.toTarget, k);
+      if (u >= 1) this.cameraAnim = null;
+    }
 
     for (const p of this.pads.values()) {
       const target = p.down ? 0.3 + 0.7 * p.pressure : 0; // mm of travel

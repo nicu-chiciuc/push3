@@ -73,14 +73,25 @@ export const explore: Demo = {
   Panel: () => (
     <>
       <h2>Explore</h2>
-      <p>Everything you do on the Push shows up here, in the 3D model, and on the Push's own screen, which this page draws.</p>
-      <ul class="tips">
-        <li><b>Pads:</b> soft hits glow blue, hard hits red. Press harder while holding to make it brighter (pressure).</li>
-        <li><b>8 knobs:</b> turn to change the gauges; touch one to highlight it. Hold <kbd>Shift</kbd> for fine steps.</li>
-        <li><b>Buttons</b> light while held. <b>Upper display buttons</b> switch tabs.</li>
-        <li><b>Touch strip, jog wheel, volume & tempo knobs</b> report in the footer of the Push screen.</li>
-      </ul>
-      <p class="muted">No Push handy? Click the 3D model: pads, buttons, knobs (drag up/down) and the strip all work virtually.</p>
+      <p>Every pad, knob, button, and touch strip mirrors between the 3D Push and live hardware—including the 960×160 screen.</p>
+      <div class="guide-list">
+        <div class="guide-item">
+          <span class="guide-k">64 Pads</span>
+          <span class="guide-v">Soft hits glow blue, hard hits red. Hold and press harder for aftertouch brightness.</span>
+        </div>
+        <div class="guide-item">
+          <span class="guide-k">8 Knobs</span>
+          <span class="guide-v">Drag up/down or turn to dial gauges. Hold <kbd>Shift</kbd> for fine steps.</span>
+        </div>
+        <div class="guide-item">
+          <span class="guide-k">Display Row</span>
+          <span class="guide-v">Upper display buttons switch modes; lower buttons mirror knob levels.</span>
+        </div>
+        <div class="guide-item">
+          <span class="guide-k">Strip &amp; Jog</span>
+          <span class="guide-v">Touch strip, jog wheel, volume, and tempo report live in the screen footer.</span>
+        </div>
+      </div>
     </>
   ),
 };
