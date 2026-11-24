@@ -1,5 +1,5 @@
 {
-  "status": "updated",
+  "status": "updating",
   "fqn": "Site",
   "logicalId": "Site",
   "instanceId": "f578b2d5f1ebf7736801c554bcf8615f",
@@ -52,9 +52,69 @@
       "metadata": "28a9399c82896b47ae447619fedd065c1762929710c74114f416c832f1c9d087"
     }
   },
-  "bindings": [],
   "providerVersion": 0,
+  "bindings": [],
   "downstream": [],
+  "old": {
+    "status": "updated",
+    "fqn": "Site",
+    "logicalId": "Site",
+    "instanceId": "f578b2d5f1ebf7736801c554bcf8615f",
+    "resourceType": "Cloudflare.Worker",
+    "props": {
+      "name": "push3-twin",
+      "domain": "push.tsx.md",
+      "assets": {
+        "directory": "./dist",
+        "notFoundHandling": "single-page-application"
+      },
+      "compatibility": {
+        "date": "2026-11-01"
+      },
+      "workersDev": {
+        "enabled": true,
+        "previewsEnabled": true
+      },
+      "isExternal": true
+    },
+    "attr": {
+      "workerId": "89730121a7ff4acdab02e9fb095b73b5",
+      "workerName": "push3-twin",
+      "logpush": false,
+      "url": "https://push.tsx.md",
+      "urls": [
+        "https://push.tsx.md",
+        "https://push3-twin.pfp.workers.dev"
+      ],
+      "domain": {
+        "name": "push.tsx.md",
+        "aliases": [],
+        "redirects": []
+      },
+      "tags": [
+        "alchemy:stack:nicu-chiciuc/push3-twin",
+        "alchemy:stage:prod",
+        "alchemy:id:Site"
+      ],
+      "durableObjectNamespaces": {},
+      "accountId": "fe57d01d7ab41f60d00ba1aade20eb33",
+      "routes": [],
+      "crons": [],
+      "tailConsumers": [],
+      "versionId": "93a7278c-7407-46a6-8ec0-f03eddf8f2b8",
+      "deploymentId": "bc6d5c94-3971-48cf-ae56-18a62afdac8c",
+      "secretNames": [],
+      "hash": {
+        "assets": "6e7ccb8dadd2643557da90f5d8584e2dd221471e1c31df2a9deb4b5c54f69c47",
+        "metadata": "28a9399c82896b47ae447619fedd065c1762929710c74114f416c832f1c9d087"
+      }
+    },
+    "bindings": [],
+    "providerVersion": 0,
+    "downstream": [],
+    "removalPolicy": "retain",
+    "providerMode": "live"
+  },
   "removalPolicy": "retain",
   "providerMode": "live"
 }
