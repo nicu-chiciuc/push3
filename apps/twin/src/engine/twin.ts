@@ -12,7 +12,7 @@ import { BUTTON_BY_ID, ENCODER_BY_ID, padNote, padPos, rgbOf, type LedState, typ
 import { DEVICE, DISPLAY, GROOVES, KEY_HEIGHT, KEYS, KNOBS, PADS, PANELS, STRIP, padCenter, type KeyGeo, type KnobGeo } from './twin/layout.ts';
 import { legendTexture } from './twin/labels.ts';
 import { knob, roundedPoly, roundedRect, slab } from './twin/shapes.ts';
-import { grainOver, grainTexture, padGlowTexture } from './twin/textures.ts';
+import { contactShadowTexture, grainOver, grainTexture, padGlowTexture, woodTexture } from './twin/textures.ts';
 
 export type View = 'angled' | 'top' | 'front';
 type Ctrl = { kind: 'pad'; note: number } | { kind: 'button'; cc: number; id: string; label: string } | { kind: 'encoder'; id: string } | { kind: 'strip' };
@@ -67,6 +67,8 @@ export class Twin {
   private drag: Drag | null = null;
   private hoverPending = false;
   private readonly rubber: THREE.MeshPhysicalMaterial;
+  /** Colored light that lit pads spill onto the plate and keys around them. */
+  private padSpill!: THREE.PointLight;
   private readonly grain: THREE.Texture;
 
   constructor(container: HTMLElement, screenCanvas: HTMLCanvasElement) {
@@ -95,7 +97,7 @@ export class Twin {
     this.container.appendChild(r.domElement);
 
     const scene = (this.scene = new THREE.Scene());
-    scene.background = new THREE.Color(0x0b0d11);
+    scene.background = new THREE.Color(0x07080a);
     scene.environment = new THREE.PMREMGenerator(r).fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environmentIntensity = 0.55;
 
@@ -123,12 +125,10 @@ export class Twin {
     rim.position.set(6, 5, -9);
     scene.add(rim);
 
-    // The floor only catches the device's shadow; the page stays dark around it.
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.ShadowMaterial({ opacity: 0.55 }));
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -DEVICE.h * MM;
-    ground.receiveShadow = true;
-    scene.add(ground);
+    this.#buildDesk();
+    this.padSpill = new THREE.PointLight(0xffffff, 0, 220 * MM, 2);
+    this.padSpill.position.set(X(PADS.bed.x), 30 * MM, Z(PADS.bed.y));
+    scene.add(this.padSpill);
 
     this.#buildBody();
     this.#buildPads();
@@ -150,6 +150,41 @@ export class Twin {
   }
 
   // ───────── geometry ─────────
+  /**
+   * An oiled walnut desk under the device. A pool of light falls on it around the device and fades
+   * to the dark page at its edges, so the desk has no visible border.
+   */
+  #buildDesk() {
+    const deskW = 1600, deskD = 1120, offsetZ = 120; // mm; more desk in front of the device than behind
+    const geo = new THREE.PlaneGeometry(deskW * MM, deskD * MM, 64, 44);
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+    const colors = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      // plane space: x right, y toward the back (before it is laid flat)
+      const x = pos.getX(i) / MM, y = pos.getY(i) / MM + offsetZ;
+      const f = Math.exp(-((x / 430) ** 2 + (y / 330) ** 2));
+      colors[i * 3] = colors[i * 3 + 1] = colors[i * 3 + 2] = f;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const desk = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial({
+      map: woodTexture(deskW, deskD), vertexColors: true, roughness: 0.62, metalness: 0, clearcoat: 0.18, clearcoatRoughness: 0.5,
+    }));
+    desk.rotation.x = -Math.PI / 2;
+    desk.position.set(0, -DEVICE.h * MM, offsetZ * MM);
+    desk.receiveShadow = true;
+    this.scene.add(desk);
+
+    // A soft contact shadow where the device meets the desk, which the light's shadow map alone misses.
+    const blur = 9;
+    const contact = new THREE.Mesh(
+      new THREE.PlaneGeometry((DEVICE.w + 4 * blur) * MM, (DEVICE.d + 4 * blur) * MM),
+      new THREE.MeshBasicMaterial({ map: contactShadowTexture(DEVICE.w, DEVICE.d, blur), color: 0x000000, transparent: true, opacity: 0.8, depthWrite: false }),
+    );
+    contact.rotation.x = -Math.PI / 2;
+    contact.position.y = -DEVICE.h * MM + 0.002;
+    this.scene.add(contact);
+  }
+
   /** Add a mesh built in millimeters at (x, z) on the top plate. */
   #place<T extends THREE.Object3D>(obj: T, xMm: number, zMm: number, yMm = 0): T {
     obj.position.set(X(xMm), TOP + yMm * MM, Z(zMm));
@@ -585,6 +620,13 @@ export class Twin {
       }
     }
     // A pressed key sinks a little into its keypad: the legend drops and the area darkens.
+    // spill: the average color of the lit pads, as bright as their average
+    let sr = 0, sg = 0, sb = 0;
+    for (const p of this.pads.values()) { const e = p.mat.emissive, k = p.mat.emissiveIntensity; sr += e.r * k; sg += e.g * k; sb += e.b * k; }
+    const peak = Math.max(sr, sg, sb);
+    if (peak > 0) this.padSpill.color.setRGB(sr / peak, sg / peak, sb / peak);
+    this.padSpill.intensity = (peak / 64) * 0.9;
+
     for (const k of this.keys.values()) {
       k.depth = ease(k.depth, k.pressed ? 1 : 0, 30);
       k.shade.material.opacity = k.depth * 0.38;
