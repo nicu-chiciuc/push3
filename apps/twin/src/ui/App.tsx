@@ -42,7 +42,8 @@ const Shell: Component<{ engine: Engine }> = (props) => {
   const onKey = (ev: KeyboardEvent) => {
     if (ev.target instanceof Element && ev.target.closest('input, textarea, select, [contenteditable]')) return;
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
-    const n = +ev.key;
+    // 1-9 pick tabs 1-9, 0 the tenth (as on a keyboard's number row)
+    const n = ev.key === '0' ? 10 : +ev.key;
     if (n >= 1 && n <= e.demos.length) e.switchDemo(n - 1);
   };
   onMount(() => addEventListener('keydown', onKey));
@@ -322,7 +323,7 @@ const DemosPane: Component<{ engine: Engine }> = (props) => {
       header={
         <div class="pane-head">
           <span class="pane-title">Modes</span>
-          <span class="pane-meta">Keys 1-9</span>
+          <span class="pane-meta">Keys 1-9, 0</span>
         </div>
       }
       content={
@@ -335,7 +336,7 @@ const DemosPane: Component<{ engine: Engine }> = (props) => {
                   class="tab"
                   classList={{ active: e.demoIndex() === i() }}
                   style={{ '--c': css(d.color) }}
-                  title={i() < 8 ? `${d.name} (upper display button ${i() + 1} on Push, key ${i() + 1})` : `${d.name} (key ${i() + 1}; no button on Push)`}
+                  title={i() < 8 ? `${d.name} (upper display button ${i() + 1} on Push, key ${i() + 1})` : `${d.name} (key ${(i() + 1) % 10}; no button on Push)`}
                   onClick={() => e.switchDemo(i())}
                 >
                   <span class="tab-led" aria-hidden="true" />

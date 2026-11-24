@@ -9,6 +9,7 @@ A 3D digital twin and demo suite for a USB-tethered **Ableton Push 3** (controll
 | [`packages/protocol`](packages/protocol) | `@push3/protocol` | The Push 3 as data: control map, MIDI parser, SysEx, LED palette and diffing, display frame encoder, a transport-agnostic `PushController`. No dependencies. |
 | [`packages/web`](packages/web) | `@push3/web` | Drive a Push from a web page: `openPush()` (plain TS), or the `PushLink` Effect service with `DirectLink()` (Web MIDI + WebUSB) and `BridgeLink()` (local bridge). |
 | [`packages/node`](packages/node) | `@push3/node` | The bridge: owns the Push from Node and shares it with pages on localhost. `push3-bridge [--static <dir>]`. |
+| [`packages/chimera`](packages/chimera) | `@push3/chimera` | [CHIMERA](https://github.com/jamesondh/chimera-vocal-synth), a physical-modeling voice synth (MIT, © Jameson Hodge): its engine (Rust → WASM, run in an AudioWorklet) and 3D head, copied unchanged at a pinned commit, plus a small API for the Chimera tab. |
 | [`packages/sidebars-solid`](packages/sidebars-solid) | `sidebars-solid` | A Solid port of [`@samebase/sidebars`](https://github.com/samebase/samebase/tree/main/packages/sidebars): resizable side panes on desktop, a swipe carousel on phones. MIT. |
 | [`apps/twin`](apps/twin) | `push3-twin` | The 3D twin and demo tabs. Deployed to [push.tsx.md](https://push.tsx.md). |
 
@@ -73,6 +74,9 @@ packages/node/src/       Node, run directly as TypeScript (Node's type stripping
                          retry schedules, hot-plug, status as a SubscriptionRef, incoming MIDI as a Stream
   Server.ts              HTTP (optional static app) + WebSocket on 127.0.0.1, as a scoped Layer
   main.ts                push3-bridge: Layer.launch + NodeRuntime.runMain
+packages/chimera/        CHIMERA (MIT, Jameson Hodge), pinned; see its README
+  upstream/              Its engine, worklet and 3D head, copied unchanged (scripts/sync-chimera.ts)
+  src/voice.ts           Our glue: one voice played by hand, the head drawn off screen (src/api.ts: the API)
 apps/twin/src/           Browser: Vite + Solid
   engine/        Plain TypeScript hot path: 60 fps loop, screen canvas, Three.js twin (twin.ts)
   engine/twin/   The twin's model: layout.ts (every control in mm, traced from a top-down photo),
@@ -88,7 +92,7 @@ apps/twin/src/           Browser: Vite + Solid
 - **Plain TS** handles everything that runs per frame or per MIDI message.
 - **Solid** handles the DOM. Its fine-grained signals update only what changed, and it coexists with the imperative Three.js and canvas code.
 
-## Tabs (upper display buttons 1-8 on the Push, or keys 1-9)
+## Tabs (upper display buttons 1-8 on the Push, or keys 1-9 and 0)
 
 | Tab | Shows off |
 |---|---|
@@ -96,11 +100,12 @@ apps/twin/src/           Browser: Vite + Solid
 | Explore | Every control mirrored. Velocity-colored pads, knob gauges on the screen. The first tab on a first visit |
 | Paint | Pads as an 8×8 canvas; knobs = hue/sat/brightness |
 | Expression | Channel AT / Poly AT / MPE modes, per-finger pressure + roll + slide, Web Audio synth |
+| Chimera | A physical model of the human voice that sings from the pads (MPE: pressure = breath, roll = pitch, slide = brightness), with its 3D head on the Push screen. Knobs shape the voice, the touch strip moves the mouth. [CHIMERA](https://github.com/jamesondh/chimera-vocal-synth) by Jameson Hodge (MIT), pinned in [`packages/chimera`](packages/chimera) |
 | Ripple | Light show from the browser every frame, or the Push's own hardware pulse/blink animation |
-| CSS Knobs | 8 knobs → 8 CSS custom properties on a live card, presets on pads, generated CSS |
 | Screen | Scrolling text, plasma, dropped images, clock on the Push display; pads mirror it |
 | Snake | A game on the pad grid (arrows, jog wheel or pads to steer) |
-| Test | Coverage checklist: every pad/button/knob you use turns green. Palette sweep, screen test pattern. Ninth tab: on the page only (no Push button) |
+| CSS Knobs | 8 knobs → 8 CSS custom properties on a live card, presets on pads, generated CSS. Ninth tab: on the page only (no Push button) |
+| Test | Coverage checklist: every pad/button/knob you use turns green. Palette sweep, screen test pattern. Tenth tab: on the page only (key 0) |
 
 ### Video deck: what runs where
 

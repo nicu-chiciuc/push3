@@ -748,6 +748,18 @@ a.icon-btn:focus-visible {
   margin: 10px 0;
 }
 
+/* Chimera: the singing head, a copy of the picture on the Push screen */
+.chimera-head {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  aspect-ratio: 1;
+  background: #000;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin: 10px 0;
+}
+
 .swatches {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));

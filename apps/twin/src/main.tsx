@@ -7,6 +7,7 @@ import { explore } from './demos/explore.tsx';
 import { test } from './demos/test.tsx';
 import { paint } from './demos/paint.tsx';
 import { expression } from './demos/expression.tsx';
+import { chimera } from './demos/chimera.tsx';
 import { ripple } from './demos/ripple.tsx';
 import { cssKnobs } from './demos/css-knobs.tsx';
 import { studio } from './demos/studio.tsx';
@@ -14,9 +15,10 @@ import { snake } from './demos/snake.tsx';
 import { videoDeck } from './demos/video.tsx';
 import './styles.css';
 
-// The first 8 tabs sit on the 8 upper display buttons. Test is a diagnostic tool, not a show: it is the
-// ninth tab, reached from the page (tab list or key 9) only.
-const engine = new Engine([videoDeck, explore, paint, expression, ripple, cssKnobs, studio, snake, test]);
+// The first 8 tabs sit on the 8 upper display buttons. CSS Knobs (its output is a card on the page) and
+// Test (a diagnostic tool, not a show) are the ninth and tenth tabs, reached from the page only (tab
+// list, or keys 9 and 0).
+const engine = new Engine([videoDeck, explore, paint, expression, chimera, ripple, studio, snake, cssKnobs, test]);
 Object.assign(window, { push3: engine }); // handy for poking at things from DevTools
 
 // Which transport: ?link=bridge|direct, else the local bridge on localhost and direct everywhere else.
