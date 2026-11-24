@@ -1,7 +1,7 @@
 // The Push 3 as an Effect service. A supervisor fiber keeps a "session" alive while the
 // Push is plugged in: the session scope owns the MIDI ports and the USB display, so
 // unplugging, Ctrl+C, or a reconnect request all release everything the same way.
-import { Context, Deferred, Effect, Layer, PubSub, Schedule, Schema, Stream, SubscriptionRef } from 'effect';
+import { Context, Deferred, Effect, Fiber, Layer, PubSub, Schedule, Schema, Stream, SubscriptionRef } from 'effect';
 import { Input, Output } from '@julusian/midi';
 import { findByIds, usb, type OutEndpoint } from 'usb';
 import { BRIDGE_PORT, darken as darkenMessages, DISPLAY_FRAME_BYTES, sessionEnd, sessionStart, USB_PRODUCT_ID, USB_VENDOR_ID, type Bytes, type MidiPort } from '@push3/protocol';
@@ -26,7 +26,7 @@ export class Device extends Context.Service<Device, {
   sendMidi(port: MidiPort, batch: ReadonlyArray<Bytes>): void;
   /** Hot path: latest RGB565 frame from the browser. */
   setFrame(pixels: Uint8Array): void;
-  /** Number of connected browsers; when it drops to 0 we darken the LEDs and show the idle screen. */
+  /** Number of connected pages. At 0 the LEDs go dark and the screen is released for other programs. */
   setViewers(n: number): void;
   readonly reconnect: Effect.Effect<void>;
 }>()('@push3/node/Device') {
@@ -114,6 +114,9 @@ function makeDevice() {
     // Mutable hot-path state shared with the session.
     let send: ((port: MidiPort, bytes: Bytes) => void) | null = null;
     let viewers = 0;
+    /** Pages connected to the bridge. The screen is claimed only while there is at least one, so a
+     *  page that talks to the Push directly (WebUSB, e.g. push.tsx.md) can use it otherwise. */
+    const viewersRef = yield* SubscriptionRef.make(0);
     let clientFrame: Buffer | null = null;
     let clientFrameAt = 0;
     let endSession: Deferred.Deferred<void> | null = null;
@@ -166,7 +169,22 @@ function makeDevice() {
         Effect.sync(() => { send = midiSend; }).pipe(Effect.andThen(setStatus({ midi: true }))),
         () => Effect.sync(() => { send = null; }).pipe(Effect.andThen(setStatus({ midi: false }))),
       );
-      yield* Effect.forkScoped(display);
+      let displayFiber: Fiber.Fiber<unknown, unknown> | null = null;
+      yield* SubscriptionRef.changes(viewersRef).pipe(
+        Stream.map((n) => n > 0),
+        Stream.changes,
+        Stream.runForEach((wanted) =>
+          Effect.gen(function* () {
+            if (wanted && !displayFiber) displayFiber = yield* Effect.forkScoped(display);
+            if (!wanted && displayFiber) {
+              yield* Fiber.interrupt(displayFiber); // closes its scope: the USB interface is released
+              displayFiber = null;
+              yield* Effect.logInfo('Display released (no page connected)');
+            }
+          }),
+        ),
+        Effect.forkScoped,
+      );
       yield* Deferred.await(end);
       yield* Effect.logInfo('Session ended (unplugged or reconnect requested)');
     }).pipe(Effect.scoped);
@@ -192,6 +210,7 @@ function makeDevice() {
       setViewers: (n) => {
         if (n === 0 && viewers > 0) { clientFrame = null; if (send) darken(send); }
         viewers = n;
+        Effect.runSync(SubscriptionRef.set(viewersRef, n));
       },
       reconnect: Effect.suspend(() => (endSession ? Deferred.succeed(endSession, undefined) : Effect.void)).pipe(Effect.asVoid),
     });
