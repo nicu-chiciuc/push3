@@ -51,10 +51,10 @@ export function padGlowTexture(): THREE.CanvasTexture {
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const u = (x + 0.5) / w * 2 - 1, v = (y + 0.5) / h * 2 - 1;
-      // distance to the edge of a rounded rectangle, 0 at the center, 1 at the edge
-      const d = Math.min(1, Math.hypot(Math.max(0, Math.abs(u) - 0.35) / 0.65, Math.max(0, Math.abs(v) - 0.3) / 0.7) * 0.85 + Math.max(Math.abs(u), Math.abs(v)) * 0.15);
-      const core = Math.exp(-(u * u + v * v) * 2.6);
-      const k = Math.min(1, 0.22 + 0.2 * (1 - d * d) + 0.62 * core);
+      // a broad hot center over a floor of about a third: bright colors clip to white or yellow in the
+      // middle and stay saturated at the edges, as in photos of the lit pads
+      const core = Math.exp(-(u * u * 1.15 + v * v) * 1.95);
+      const k = Math.min(1, 0.3 + 0.7 * core);
       const o = (y * w + x) * 4;
       img.data[o] = img.data[o + 1] = img.data[o + 2] = Math.round(k * 255);
     }

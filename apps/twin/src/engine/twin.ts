@@ -9,7 +9,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { BUTTON_BY_ID, ENCODER_BY_ID, padNote, padPos, rgbOf, type LedState, type PushEvent, type RGBW } from '@push3/protocol';
-import { DEVICE, DISPLAY, KEYS, KNOBS, PADS, PANELS, STRIP, padCenter, type KeyGeo, type KnobGeo } from './twin/layout.ts';
+import { DEVICE, DISPLAY, GROOVES, KEY_HEIGHT, KEYS, KNOBS, PADS, PANELS, STRIP, padCenter, type KeyGeo, type KnobGeo } from './twin/layout.ts';
 import { legendTexture } from './twin/labels.ts';
 import { knob, roundedPoly, roundedRect, slab } from './twin/shapes.ts';
 import { grainOver, grainTexture, padGlowTexture } from './twin/textures.ts';
@@ -17,8 +17,8 @@ import { grainOver, grainTexture, padGlowTexture } from './twin/textures.ts';
 export type View = 'angled' | 'top' | 'front';
 type Ctrl = { kind: 'pad'; note: number } | { kind: 'button'; cc: number; id: string; label: string } | { kind: 'encoder'; id: string } | { kind: 'strip' };
 interface PadVis { mesh: THREE.Mesh; mat: THREE.MeshPhysicalMaterial; dot: THREE.Mesh; down: boolean; pressure: number; x: number; y: number; depth: number }
-interface KeyVis { geo: KeyGeo; group: THREE.Group; legend: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial> | null; bar: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null; rgb: boolean; pressed: boolean; depth: number }
-interface EncoderVis { geo: KnobGeo; steps: number; spinner: THREE.Group; ring: THREE.Mesh<THREE.TorusGeometry, THREE.MeshBasicMaterial>; angle: number; shown: number; touched: boolean; mark: number | null; pressDepth: number; nudge: number }
+interface KeyVis { geo: KeyGeo; shade: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>; legend: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial> | null; bar: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null; rgb: boolean; pressed: boolean; depth: number }
+interface EncoderVis { geo: KnobGeo; steps: number; spinner: THREE.Group; tick: THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial>; active: number; ring: THREE.Mesh<THREE.TorusGeometry, THREE.MeshBasicMaterial>; angle: number; shown: number; touched: boolean; mark: number | null; pressDepth: number; nudge: number }
 type Drag = { ctrl: Ctrl; lastY: number; acc: number };
 
 /** Scene units per millimeter: the device is about 13.5 units wide. */
@@ -36,6 +36,8 @@ const VIEWS: Record<View, THREE.Vector3> = {
 
 /** Legend print when the key is dark, and the LED color when lit. */
 const PRINT_OFF = new THREE.Color(0x44474c);
+/** An unlit light bar: a pale grey diffuser strip. */
+const BAR_OFF = new THREE.Color(0x4a4c50);
 
 export class Twin {
   private readonly container: HTMLElement;
@@ -72,7 +74,7 @@ export class Twin {
     this.grain = grainTexture();
     // The keys are soft-touch silicone: very matte, with a faint velvet sheen at grazing angles.
     this.rubber = new THREE.MeshPhysicalMaterial({
-      color: 0x1d1e21, roughness: 0.86, metalness: 0, roughnessMap: this.grain,
+      color: 0x17181a, roughness: 0.86, metalness: 0, roughnessMap: this.grain,
       sheen: 0.25, sheenRoughness: 0.8, sheenColor: new THREE.Color(0x4c4f55),
     });
     this.#init(screenCanvas);
@@ -86,7 +88,9 @@ export class Twin {
     r.setPixelRatio(Math.min(devicePixelRatio, 2));
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
-    r.toneMapping = THREE.NeutralToneMapping; // keeps LED colors saturated where ACES washes them out
+    // Linear: each color channel clips on its own, like a camera sensor, so a bright orange LED
+    // reads yellow at its core and stays orange at its edges (ACES and Neutral wash it to peach).
+    r.toneMapping = THREE.LinearToneMapping;
     r.toneMappingExposure = 1.0;
     this.container.appendChild(r.domElement);
 
@@ -104,9 +108,10 @@ export class Twin {
     this.controls.target.set(0, 0, 0.3);
     this.controls.addEventListener('start', () => { this.userMoved = true; });
 
-    scene.add(new THREE.HemisphereLight(0xdfe9ff, 0x1a1d24, 0.55));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-    sun.position.set(-5, 14, 7);
+    // Neutral light, mostly from above like a product shoot under soft boxes.
+    scene.add(new THREE.HemisphereLight(0xf2f2f2, 0x1c1c1e, 0.5));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+    sun.position.set(-3, 15, 3.5);
     sun.castShadow = true;
     sun.shadow.mapSize.set(4096, 4096);
     Object.assign(sun.shadow.camera, { left: -10, right: 10, top: 10, bottom: -10, near: 1, far: 40 });
@@ -114,11 +119,12 @@ export class Twin {
     sun.shadow.normalBias = 0.01;
     sun.shadow.radius = 3;
     scene.add(sun);
-    const rim = new THREE.DirectionalLight(0xbfd4ff, 0.5);
+    const rim = new THREE.DirectionalLight(0xe8eef8, 0.45);
     rim.position.set(6, 5, -9);
     scene.add(rim);
 
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshStandardMaterial({ color: 0x14171d, roughness: 0.95 }));
+    // The floor only catches the device's shadow; the page stays dark around it.
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.ShadowMaterial({ opacity: 0.55 }));
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -DEVICE.h * MM;
     ground.receiveShadow = true;
@@ -133,7 +139,7 @@ export class Twin {
 
     this.composer = new EffectComposer(r);
     this.composer.addPass(new RenderPass(scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.32, 0.3, 0.95);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.16, 0.25, 1.4);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
 
@@ -154,24 +160,39 @@ export class Twin {
   #buildBody() {
     // Anodized aluminum chassis: a flat slab with straight sides and softly rounded edges.
     const mat = new THREE.MeshPhysicalMaterial({ color: 0x212225, roughness: 0.58, metalness: 0.25, roughnessMap: this.grain, clearcoat: 0.05, clearcoatRoughness: 0.7 });
-    const body = new THREE.Mesh(slab(roundedRect(DEVICE.w, DEVICE.d, DEVICE.r), DEVICE.h, 1.6, 5), mat);
-    this.#place(body, DEVICE.w / 2, DEVICE.d / 2, -DEVICE.h);
+    const blockH = DEVICE.h - DEVICE.base.h;
+    const body = new THREE.Mesh(slab(roundedRect(DEVICE.w, DEVICE.d, DEVICE.r), blockH, DEVICE.edge, 5), mat);
+    this.#place(body, DEVICE.w / 2, DEVICE.d / 2, -blockH);
     body.castShadow = body.receiveShadow = true;
     this.scene.add(body);
+    // the base plate underneath, set in from the sides
+    const { inset } = DEVICE.base;
+    const base = new THREE.Mesh(slab(roundedRect(DEVICE.w - 2 * inset, DEVICE.d - 2 * inset, DEVICE.r), DEVICE.base.h, 0.3, 2), mat);
+    this.#place(base, DEVICE.w / 2, DEVICE.d / 2, -DEVICE.h);
+    base.castShadow = true;
+    this.scene.add(base);
 
-    // Each rubber keypad sits in a cutout of the top plate; the gap around it reads as a dark outline.
+    // Each keypad is one rubber part in a cutout of the top plate; the gap around it reads as a thin
+    // dark outline. Its keys are split by short grooves that stop before the edges.
     const cutMat = new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.9 });
     for (const p of PANELS) {
-      const cut = new THREE.Mesh(slab(roundedRect(p.w + 1.2, p.h + 1.2, p.r + 0.6), 0.12, 0), cutMat);
+      const cut = new THREE.Mesh(slab(roundedRect(p.w + 0.8, p.h + 0.8, p.r + 0.4), 0.12, 0), cutMat);
       this.#place(cut, p.x, p.y, 0.01);
       cut.receiveShadow = true;
       this.scene.add(cut);
-      if (p.fill) {
-        // one-piece keypads: rubber under the hairline grooves, so the keys read as one surface
-        const fill = new THREE.Mesh(slab(roundedRect(p.w - 0.2, p.h - 0.2, p.r), p.fill, 0.3), this.rubber);
-        this.#place(fill, p.x, p.y);
-        this.scene.add(fill);
-      }
+      const pad = new THREE.Mesh(slab(roundedRect(p.w, p.h, p.r), KEY_HEIGHT, 0.22, 3), this.rubber);
+      this.#place(pad, p.x, p.y);
+      pad.castShadow = pad.receiveShadow = true;
+      this.scene.add(pad);
+    }
+    const grooveMat = new THREE.MeshBasicMaterial({ color: 0x0b0b0c, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    for (const g of GROOVES) {
+      const len = Math.hypot(g.x1 - g.x0, g.y1 - g.y0);
+      const groove = new THREE.Mesh(new THREE.ShapeGeometry(roundedRect(len, 0.6, 0.3)), grooveMat);
+      groove.rotation.x = -Math.PI / 2;
+      groove.rotation.z = -Math.atan2(g.y1 - g.y0, g.x1 - g.x0);
+      this.#place(groove, (g.x0 + g.x1) / 2, (g.y0 + g.y1) / 2, KEY_HEIGHT + 0.01);
+      this.scene.add(groove);
     }
     // The pad grid sits on a black bed.
     const bed = new THREE.Mesh(slab(roundedRect(PADS.bed.w, PADS.bed.h, 1.5), 0.2, 0), cutMat);
@@ -181,7 +202,7 @@ export class Twin {
   }
 
   #buildPads() {
-    const geo = slab(roundedRect(PADS.w, PADS.h, PADS.r), PADS.height, 1.1, 4);
+    const geo = slab(roundedRect(PADS.w, PADS.h, PADS.r), PADS.height, 0.75, 4);
     const glow = padGlowTexture();
     // Planar UVs over the pad top, so the glow map lines up with the pad.
     const uv = geo.getAttribute('uv') as THREE.BufferAttribute, pos = geo.getAttribute('position') as THREE.BufferAttribute;
@@ -197,6 +218,13 @@ export class Twin {
           sheen: 0.3, sheenRoughness: 0.7, sheenColor: new THREE.Color(0x55585f),
           emissiveMap: glow, emissive: 0x000000,
         });
+        // Photos of lit pads clip to white (or yellow) in the middle while the edges stay saturated:
+        // add a white-hot core that scales with the LED's brightness.
+        mat.onBeforeCompile = (shader) => {
+          shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+            float core = pow(emissiveColor.r, 3.0);
+            totalEmissiveRadiance += emissive * core * 2.0 + vec3(core * emissiveColor.r) * max(max(emissive.r, emissive.g), emissive.b) * 0.35;`);
+        };
         const mesh = this.#place(new THREE.Mesh(geo, mat), ...padCenter(row, col));
         mesh.castShadow = mesh.receiveShadow = true;
         mesh.userData.ctrl = { kind: 'pad', note } satisfies Ctrl;
@@ -215,20 +243,22 @@ export class Twin {
     // Satin black plastic with a soft rubbery top.
     const knobGrain = grainOver(this.grain, 24, 6); // lathe UVs run 0..1 around and along the profile
     const mat = new THREE.MeshPhysicalMaterial({ color: 0x1a1b1e, roughness: 0.42, metalness: 0.1, roughnessMap: knobGrain, clearcoat: 0.25, clearcoatRoughness: 0.45 });
-    const jogMat = new THREE.MeshPhysicalMaterial({ color: 0x1b1c1f, roughness: 0.4, metalness: 0.15, roughnessMap: knobGrain, clearcoat: 0.35, clearcoatRoughness: 0.4 });
-    const tickMat = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.6 });
+    // the volume knob and the jog wheel: satin anodized metal (a soft highlight runs down their sides)
+    const jogMat = new THREE.MeshPhysicalMaterial({ color: 0x232428, roughness: 0.48, metalness: 0.6, roughnessMap: knobGrain });
+    // A mark that shows only while a knob is touched or turning: the real knobs are plain.
+    const tickMat = new THREE.MeshStandardMaterial({ color: 0xa0a6ae, roughness: 0.6, transparent: true, opacity: 0, depthWrite: false });
     for (const spec of KNOBS) {
       const enc = ENCODER_BY_ID.get(spec.id);
       if (!enc) throw new Error(`twin layout: unknown knob ${spec.id}`);
       const group = this.#place(new THREE.Group(), spec.x, spec.y);
       const spinner = new THREE.Group();
-      const body = new THREE.Mesh(knob(spec.profile), spec.id === 'jog' ? jogMat : mat);
+      const body = new THREE.Mesh(knob(spec.profile), spec.id === 'jog' || spec.id === 'volume' ? jogMat : mat);
       body.castShadow = true;
       body.receiveShadow = true;
       spinner.add(body);
       // A faint mark so turning is visible on the twin (the real knobs are plain).
       const r = spec.profile.r, h = spec.profile.h;
-      const tick = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.6, r * 0.09), 0.08, r * 0.42), tickMat);
+      const tick = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.6, r * 0.09), 0.08, r * 0.42), tickMat.clone());
       tick.position.set(0, h - (spec.profile.dish ?? 0) * 0.2 + 0.02, -r * 0.5);
       spinner.add(tick);
       const ring = new THREE.Mesh(
@@ -241,47 +271,44 @@ export class Twin {
       group.add(spinner, ring);
       for (const m of [body, tick]) m.userData.ctrl = { kind: 'encoder', id: spec.id } satisfies Ctrl;
       this.scene.add(group);
-      this.encoders.set(spec.id, { geo: spec, steps: enc.steps, spinner, ring, angle: 0, shown: 0, touched: false, mark: null, pressDepth: 0, nudge: 0 });
+      this.encoders.set(spec.id, { geo: spec, steps: enc.steps, spinner, tick, active: 0, ring, angle: 0, shown: 0, touched: false, mark: null, pressDepth: 0, nudge: 0 });
     }
   }
 
   #buildKeys() {
+    const legendBase = { transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 } as const;
     for (const k of KEYS) {
       const spec = BUTTON_BY_ID.get(k.id);
       if (!spec) throw new Error(`twin layout: unknown button ${k.id}`);
       const ctrl: Ctrl = { kind: 'button', cc: spec.cc, id: spec.id, label: spec.label };
-      const group = this.#place(new THREE.Group(), k.cx, k.cy);
-      const shape = k.poly ? roundedPoly(k.poly, k.r) : roundedRect(k.w, k.h, k.r);
-      const cap = new THREE.Mesh(slab(shape, k.height, Math.min(0.55, k.height / 2.2), 3), this.rubber);
-      cap.castShadow = cap.receiveShadow = true;
-      cap.userData.ctrl = ctrl;
-      group.add(cap);
+      // The key's area on its keypad: what the mouse picks, and a shade that darkens while pressed.
+      const area = k.poly ? new THREE.ShapeGeometry(roundedPoly(k.poly, 0.6)) : new THREE.ShapeGeometry(roundedRect(k.w - 0.3, k.h - 0.3, 1));
+      const shade = new THREE.Mesh(area, new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0, ...legendBase }));
+      shade.rotation.x = -Math.PI / 2;
+      this.#place(shade, k.cx, k.cy, KEY_HEIGHT + 0.02);
+      shade.userData.ctrl = ctrl;
+      this.scene.add(shade);
 
       let legend: KeyVis['legend'] = null;
-      if (k.legend) {
-        const tex = legendTexture(k.legend, k.legendBox.w, k.legendBox.h);
+      if (k.legends.length) {
+        const box = { x0: k.cx - k.w / 2, y0: k.cy - k.h / 2, w: k.w, h: k.h };
+        const tex = legendTexture(k.legends, box);
         legend = new THREE.Mesh(
-          new THREE.PlaneGeometry(k.legendBox.w, k.legendBox.h),
-          new THREE.MeshStandardMaterial({
-            map: tex, transparent: true, color: PRINT_OFF, emissiveMap: tex, emissive: 0x000000, emissiveIntensity: 1.6, roughness: 0.7,
-            depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
-          }),
+          new THREE.PlaneGeometry(k.w, k.h),
+          new THREE.MeshStandardMaterial({ map: tex, color: PRINT_OFF, emissiveMap: tex, emissive: 0x000000, emissiveIntensity: 1.6, roughness: 0.7, ...legendBase }),
         );
         legend.rotation.x = -Math.PI / 2;
-        legend.position.set(k.legendBox.x, k.height + 0.05, k.legendBox.y);
-        legend.userData.ctrl = ctrl;
-        group.add(legend);
+        this.#place(legend, k.cx, k.cy, KEY_HEIGHT + 0.04);
+        this.scene.add(legend);
       }
       let bar: KeyVis['bar'] = null;
       if (k.bar) {
         // The light bar of a display button: a thin diffuser line across the key.
-        bar = new THREE.Mesh(slab(roundedRect(k.bar.w, k.bar.h, k.bar.h / 2), 0.08, 0), new THREE.MeshBasicMaterial({ color: 0x2a2d33, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
-        bar.position.set(0, k.height, k.bar.y);
-        bar.userData.ctrl = ctrl;
-        group.add(bar);
+        bar = new THREE.Mesh(slab(roundedRect(k.bar.w, k.bar.h, k.bar.h / 2), 0.08, 0), new THREE.MeshBasicMaterial({ color: BAR_OFF, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+        this.#place(bar, k.cx, k.cy + k.bar.y, KEY_HEIGHT);
+        this.scene.add(bar);
       }
-      this.scene.add(group);
-      this.keys.set(spec.cc, { geo: k, group, legend, bar, rgb: spec.rgb, pressed: false, depth: 0 });
+      this.keys.set(spec.cc, { geo: k, shade, legend, bar, rgb: spec.rgb, pressed: false, depth: 0 });
     }
   }
 
@@ -298,7 +325,7 @@ export class Twin {
     this.#place(screen, DISPLAY.x + DISPLAY.screen.dx, DISPLAY.y + DISPLAY.screen.dy, 0.27);
     this.scene.add(screen);
     const glass = new THREE.Mesh(new THREE.PlaneGeometry(DISPLAY.w - 0.4, DISPLAY.h - 0.4), new THREE.MeshPhysicalMaterial({
-      color: 0x000000, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.18, clearcoat: 1, clearcoatRoughness: 0.03, depthWrite: false,
+      color: 0x000000, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.1, clearcoat: 0.6, clearcoatRoughness: 0.05, depthWrite: false,
     }));
     glass.rotation.x = -Math.PI / 2;
     this.#place(glass, DISPLAY.x, DISPLAY.y, 0.31);
@@ -314,7 +341,7 @@ export class Twin {
     const ledTop = STRIP.y - STRIP.h / 2 + STRIP.ledInset, ledBottom = STRIP.y + STRIP.h / 2 - STRIP.ledInset;
     this.stripZ0 = Z(ledBottom);
     this.stripZ1 = Z(ledTop);
-    const geo = slab(roundedRect(0.9, (ledBottom - ledTop) / 31 * 0.8, 0.3), 0.05, 0);
+    const geo = slab(roundedRect(0.6, ((ledBottom - ledTop) / 30) * 1.02, 0.2), 0.05, 0);
     for (let i = 0; i < 31; i++) {
       const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x1b1c1f, toneMapped: false }));
       this.#place(m, STRIP.x + STRIP.ledDx, ledBottom + ((ledTop - ledBottom) * i) / 30, 0.16);
@@ -351,7 +378,7 @@ export class Twin {
       if (jog && (ev.id === 'jogLeft' || ev.id === 'jogRight')) jog.nudge = ev.pressed ? (ev.id === 'jogLeft' ? -1 : 1) : 0;
     } else if (ev.type === 'encoder') {
       const e = this.encoders.get(ev.id);
-      if (e) e.angle -= (ev.delta * Math.PI * 2) / e.steps;
+      if (e) { e.angle -= (ev.delta * Math.PI * 2) / e.steps; e.active = 1; }
     } else if (ev.type === 'touch') {
       if (ev.id === 'strip') {
         this.strip.touched = ev.touched;
@@ -395,11 +422,14 @@ export class Twin {
       const p = this.pads.get(num);
       if (!p) return;
       const lit = r + g + b > 0;
-      p.mat.emissive.setRGB(r / 255, g / 255, b / 255, SRGB);
-      p.mat.emissiveIntensity = lit ? 1.85 : 0;
+      // The pads' RGB LEDs mix full white to a faint lavender (as photos of the device show).
+      p.mat.emissive.setRGB((r / 255) * 0.95, (g / 255) * 0.88, b / 255, SRGB);
+      p.mat.emissiveIntensity = lit ? 1.6 : 0;
       // Lit silicone takes on the LED color; dark silicone is a cool dark grey.
-      if (lit) p.mat.color.setRGB(0.06 + (r / 255) * 0.22, 0.06 + (g / 255) * 0.22, 0.06 + (b / 255) * 0.22, SRGB);
+      // A lit pad is dominated by its LED: little reflected light, so its edges keep their color.
+      if (lit) p.mat.color.setRGB(0.012 + (r / 255) * 0.03, 0.012 + (g / 255) * 0.03, 0.012 + (b / 255) * 0.03, SRGB);
       else p.mat.color.setHex(0x232427);
+      p.mat.sheen = lit ? 0 : 0.3;
       return;
     }
     const k = this.keys.get(num);
@@ -409,7 +439,7 @@ export class Twin {
     const lit = lr + lg + lb > 0;
     if (bar) {
       if (lit) bar.material.color.setRGB((lr / 255) * 1.8, (lg / 255) * 1.8, (lb / 255) * 1.8, SRGB);
-      else bar.material.color.setHex(0x2a2d33);
+      else bar.material.color.copy(BAR_OFF);
     }
     if (legend) {
       legend.material.emissive.setRGB(lr / 255, lg / 255, lb / 255, SRGB);
@@ -544,7 +574,7 @@ export class Twin {
     const ease = (cur: number, target: number, k: number) => cur + (target - cur) * Math.min(1, dt * k);
 
     for (const p of this.pads.values()) {
-      const target = p.down ? 0.6 + 1.2 * p.pressure : 0; // mm of travel
+      const target = p.down ? 0.3 + 0.7 * p.pressure : 0; // mm of travel
       p.depth = ease(p.depth, target, 30);
       p.mesh.position.y = TOP - p.depth * MM;
       p.dot.visible = p.down;
@@ -554,12 +584,16 @@ export class Twin {
         p.dot.scale.setScalar(0.6 + p.pressure * 0.9);
       }
     }
+    // A pressed key sinks a little into its keypad: the legend drops and the area darkens.
     for (const k of this.keys.values()) {
-      k.depth = ease(k.depth, k.pressed ? 0.7 : 0, 30);
-      k.group.position.y = TOP - k.depth * MM;
+      k.depth = ease(k.depth, k.pressed ? 1 : 0, 30);
+      k.shade.material.opacity = k.depth * 0.38;
+      if (k.legend) k.legend.position.y = TOP + (KEY_HEIGHT + 0.04 - k.depth * 0.3) * MM;
     }
     for (const e of this.encoders.values()) {
       e.shown = ease(e.shown, e.angle, 25);
+      e.active = Math.max(0, e.active - dt * 0.7);
+      e.tick.material.opacity = ease(e.tick.material.opacity, e.touched ? 1 : Math.min(1, e.active * 2), 12);
       e.spinner.rotation.y = e.shown;
       e.spinner.position.y = -e.pressDepth;
       e.spinner.position.x = e.nudge * 1.5;
@@ -574,7 +608,7 @@ export class Twin {
       let level = this.stripLevels[i] ?? 0;
       if (!this.stripHost) level = Math.abs(i - Math.round(this.strip.value * 30)) <= 0 ? 7 : 0;
       const k = level / 7;
-      this.stripLeds[i]!.material.color.setRGB(0.035 + k * 1.6, 0.035 + k * 1.6, 0.04 + k * 1.6);
+      this.stripLeds[i]!.material.color.setRGB(0.075 + k * 1.6, 0.075 + k * 1.6, 0.08 + k * 1.6);
     }
     this.stripFinger.visible = this.strip.touched;
     this.stripFinger.position.z = this.stripZ0 + (this.stripZ1 - this.stripZ0) * this.strip.value;
