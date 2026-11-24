@@ -155,20 +155,28 @@ export class Twin {
    * to the dark page at its edges, so the desk has no visible border.
    */
   #buildDesk() {
-    const deskW = 1600, deskD = 1120, offsetZ = 120; // mm; more desk in front of the device than behind
+    const deskW = 1800, deskD = 1400, offsetZ = 100; // mm; a little more desk in front of the device than behind
     const geo = new THREE.PlaneGeometry(deskW * MM, deskD * MM, 64, 44);
     const pos = geo.getAttribute('position') as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
     for (let i = 0; i < pos.count; i++) {
-      // plane space: x right, y toward the back (before it is laid flat)
-      const x = pos.getX(i) / MM, y = pos.getY(i) / MM + offsetZ;
-      const f = Math.exp(-((x / 430) ** 2 + (y / 330) ** 2));
-      colors[i * 3] = colors[i * 3 + 1] = colors[i * 3 + 2] = f;
+      // plane space: x right, y toward the back (before it is laid flat); the device is at y = offsetZ
+      const x = pos.getX(i) / MM, y = pos.getY(i) / MM - offsetZ;
+      // g² darkens the diffuse light (vertex colors multiply it) and g, below, all of it: the pool
+      // has to dim the light's reflection too, which at grazing angles would light the far desk
+      const g = Math.exp(-0.5 * ((x / 430) ** 2 + (y / 330) ** 2));
+      colors[i * 3] = colors[i * 3 + 1] = colors[i * 3 + 2] = g;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     const desk = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial({
-      map: woodTexture(deskW, deskD), vertexColors: true, roughness: 0.62, metalness: 0, clearcoat: 0.18, clearcoatRoughness: 0.5,
+      map: woodTexture(deskW, deskD), vertexColors: true, roughness: 0.62, metalness: 0,
+      // little environment reflection: at grazing angles it would light the desk beyond the pool
+      envMapIntensity: 0.12,
     }));
+    (desk.material as THREE.MeshPhysicalMaterial).onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `outgoingLight *= vColor.r;
+#include <opaque_fragment>`);
+    };
     desk.rotation.x = -Math.PI / 2;
     desk.position.set(0, -DEVICE.h * MM, offsetZ * MM);
     desk.receiveShadow = true;
