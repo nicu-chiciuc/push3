@@ -605,12 +605,11 @@ const EventLog: Component<{ engine: Engine }> = (props) => {
 };
 
 /* Minimal crisp studio icons */
+/** 3×3 pads, cyan to orange: the same mark as public/favicon.svg (keep the two in step). */
+const BRAND_PADS = ['#00c9f0', '#88aaff', '#e18ceb', '#66b3ff', '#cf92fd', '#ff81a7', '#b99aff', '#fa83c1', '#ff8b58'];
 const BrandMark = () => (
-  <svg class="brand-mark" width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-    <rect x="1" y="1" width="7" height="7" rx="1.8" fill="#46d7ff" />
-    <rect x="10" y="1" width="7" height="7" rx="1.8" fill="#ff9628" />
-    <rect x="1" y="10" width="7" height="7" rx="1.8" fill="#ff5cc8" />
-    <rect x="10" y="10" width="7" height="7" rx="1.8" fill="#3ddc84" />
+  <svg class="brand-mark" width="18" height="18" viewBox="0 0 26 26" aria-hidden="true">
+    {BRAND_PADS.map((fill, i) => <rect x={(i % 3) * 9} y={Math.floor(i / 3) * 9} width="8" height="8" rx="2" fill={fill} />)}
   </svg>
 );
 
