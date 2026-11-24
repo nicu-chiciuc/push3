@@ -114,7 +114,7 @@ export const paint: Demo = {
           </div>
         </div>
         <div class="row">
-          <label>Exact color <input type="color" value={toHex(brushRGB())} onInput={(e) => {
+          <label class="color-field">Exact color <input type="color" value={toHex(brushRGB())} onInput={(e) => {
             const v = e.currentTarget.value;
             pickColor([1, 3, 5].map((i) => parseInt(v.slice(i, i + 2), 16)) as unknown as RGB);
           }} /></label>

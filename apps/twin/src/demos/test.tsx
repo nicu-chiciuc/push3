@@ -84,7 +84,7 @@ export const test: Demo = {
     return (
       <>
         <h2>Test every control</h2>
-        <p>Press every pad and button, turn and touch every knob, and slide on the touch strip. Each control turns <b style={{ color: '#3ddc84' }}>green</b> once the page receives its message.</p>
+        <p>Press every pad and button, turn and touch every knob, and slide on the touch strip. Each control turns <b class="ok-text">green</b> once the page receives its message.</p>
         <div class="row">
           <button classList={{ active: sweep() }} onClick={() => setSweep(!sweep())}>Palette sweep</button>
           <button onClick={() => (s.allOnUntil = performance.now() + 3000)}>All LEDs on (3 s)</button>

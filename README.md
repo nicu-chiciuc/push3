@@ -9,6 +9,7 @@ A 3D digital twin and demo suite for a USB-tethered **Ableton Push 3** (controll
 | [`packages/protocol`](packages/protocol) | `@push3/protocol` | The Push 3 as data: control map, MIDI parser, SysEx, LED palette and diffing, display frame encoder, a transport-agnostic `PushController`. No dependencies. |
 | [`packages/web`](packages/web) | `@push3/web` | Drive a Push from a web page: `openPush()` (plain TS), or the `PushLink` Effect service with `DirectLink()` (Web MIDI + WebUSB) and `BridgeLink()` (local bridge). |
 | [`packages/node`](packages/node) | `@push3/node` | The bridge: owns the Push from Node and shares it with pages on localhost. `push3-bridge [--static <dir>]`. |
+| [`packages/sidebars-solid`](packages/sidebars-solid) | `sidebars-solid` | A Solid port of [`@samebase/sidebars`](https://github.com/samebase/samebase/tree/main/packages/sidebars): resizable side panes on desktop, a swipe carousel on phones. MIT. |
 | [`apps/twin`](apps/twin) | `push3-twin` | The 3D twin and demo tabs. Deployed to [push.tsx.md](https://push.tsx.md). |
 
 The packages export their TypeScript source and are private for now. Another app in this workspace, or a Vite app linked to it (`pnpm add link:../push3-twin/packages/web`), can use them as they are. Publishing them to npm needs a license and a build step first.
@@ -80,7 +81,7 @@ apps/twin/src/           Browser: Vite + Solid
   demos/*.tsx    One file per tab: onEvent / tick / draw (hot path) + a Solid Panel component.
                  Each tab is an Effect fiber; `activate` acquires device modes in its Scope,
                  e.g. `app.usePressureMode('mpe')`, and they're restored when you switch tabs.
-  ui/App.tsx     Solid shell: status, tabs, panel, event log
+  ui/App.tsx     Solid shell on sidebars-solid: Demos (left), 3D stage (main), Device & Log (right)
 ```
 
 - **Effect** handles lifecycles, concurrency, retries and validation: the whole bridge, the browser's connection, and each tab's lifetime.

@@ -121,7 +121,7 @@ export const cssKnobs: Demo = {
           <li><b>Top pad row:</b> 8 preset slots (tap empty = save, tap = recall, <kbd>Shift</kbd>+tap = overwrite).</li>
           <li><b>Second row:</b> quick hues. <b>Lower button 1</b> resets, <b>8</b> toggles fine mode (or hold <kbd>Shift</kbd>).</li>
         </ul>
-        <div class="row"><b style={{ 'font-size': '13px' }}>Generated CSS</b><button onClick={copy}>{copied()}</button></div>
+        <div class="row row-between"><b class="section-label">Generated CSS</b><button type="button" onClick={copy}>{copied()}</button></div>
         <pre class="code">{code()}</pre>
       </>
     );

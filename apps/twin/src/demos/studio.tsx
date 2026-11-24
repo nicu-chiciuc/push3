@@ -133,7 +133,7 @@ export const studio: Demo = {
         </div>
         <div class="card-box">
           <label class="muted">Scrolling text</label>
-          <textarea rows="2" style={{ width: '100%', 'margin-top': '6px' }} value={message()} onInput={(e) => { setMessage(e.currentTarget.value); setMode('text'); }} />
+          <textarea rows="2" class="full-input" value={message()} onInput={(e) => { setMessage(e.currentTarget.value); setMode('text'); }} />
         </div>
         <div
           class="card-box drop"
@@ -143,7 +143,7 @@ export const studio: Demo = {
           onDrop={(e) => { e.preventDefault(); setDragging(false); loadImage(e.dataTransfer?.files[0]); }}
         >
           <p class="muted">Drop an image here, or</p>
-          <input type="file" accept="image/*" onChange={(e) => loadImage(e.currentTarget.files?.[0])} />
+          <input type="file" class="file-input" accept="image/*" onChange={(e) => loadImage(e.currentTarget.files?.[0])} />
         </div>
         <p class="muted">Knobs. Text: speed, hue, size · Plasma: speed, scale, hue · Image: zoom, pan X, pan Y.</p>
       </>

@@ -138,9 +138,9 @@ export const expression: Demo = {
           </For>
         </div>
         <div class="row">
-          <button onClick={toggleSound}>{soundOn() ? '🔊 Sound on' : '🔈 Enable sound'}</button>
+          <button type="button" classList={{ active: soundOn() }} onClick={toggleSound}>{soundOn() ? 'Sound on' : 'Enable sound'}</button>
           <label class="toggle">Bend range
-            <input type="range" min="0" max="24" step="1" style={{ width: '120px' }} value={bendRange()} onInput={(e) => { synth.bendRange = +e.currentTarget.value; setBendRange(synth.bendRange); }} />
+            <input type="range" class="range-input" min="0" max="24" step="1" value={bendRange()} onInput={(e) => { synth.bendRange = +e.currentTarget.value; setBendRange(synth.bendRange); }} />
             {bendRange()} st
           </label>
         </div>
