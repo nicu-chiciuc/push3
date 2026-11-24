@@ -197,6 +197,22 @@ code, pre { font-family: var(--mono); }
   border-color: transparent;
   color: var(--muted);
 }
+a.icon-btn {
+  border: 1px solid transparent;
+  border-radius: 7px;
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+a.icon-btn:hover {
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--text);
+}
+a.icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .icon-btn:hover:not(:disabled) {
   background: var(--surface-2);
   border-color: var(--line);

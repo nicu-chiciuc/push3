@@ -12,7 +12,7 @@ A 3D digital twin and demo suite for a USB-tethered **Ableton Push 3** (controll
 | [`packages/sidebars-solid`](packages/sidebars-solid) | `sidebars-solid` | A Solid port of [`@samebase/sidebars`](https://github.com/samebase/samebase/tree/main/packages/sidebars): resizable side panes on desktop, a swipe carousel on phones. MIT. |
 | [`apps/twin`](apps/twin) | `push3-twin` | The 3D twin and demo tabs. Deployed to [push.tsx.md](https://push.tsx.md). |
 
-The packages export their TypeScript source and are private for now. Another app in this workspace, or a Vite app linked to it (`pnpm add link:../push3-twin/packages/web`), can use them as they are. Publishing them to npm needs a license and a build step first.
+The packages export their TypeScript source and are not on npm yet. Another app in this workspace, or a Vite app linked to it (`pnpm add link:../push3-twin/packages/web`), can use them as they are. Publishing them to npm needs a license and a build step first.
 
 ## Two ways to connect
 
