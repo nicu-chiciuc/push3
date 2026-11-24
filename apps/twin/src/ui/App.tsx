@@ -94,7 +94,7 @@ const Shell: Component<{ engine: Engine }> = (props) => {
     };
   });
 
-  // Only surface an inline alert on the 3D stage for actionable partial/broken hardware states —
+  // Only surface an inline alert on the 3D stage for actionable partial/broken hardware states:
   // never nag visitors who are just exploring the 3D twin without hardware plugged in.
   const stageAlert = createMemo((): { text: string; tone: 'warn' | 'bad' } | null => {
     const s = e.status();
@@ -102,13 +102,13 @@ const Shell: Component<{ engine: Engine }> = (props) => {
       if (s.midi && !s.display) {
         return {
           tone: 'warn',
-          text: 'Pads connected, screen busy — quit Ableton Live and click Connect Push.',
+          text: 'Pads connected, screen busy. quit Ableton Live and click Connect Push.',
         };
       }
       if (!s.midi && s.display) {
         return {
           tone: 'warn',
-          text: 'Screen connected, MIDI blocked — click Connect Push and allow MIDI access.',
+          text: 'Screen connected, MIDI blocked. click Connect Push and allow MIDI access.',
         };
       }
       return null;
@@ -117,13 +117,13 @@ const Shell: Component<{ engine: Engine }> = (props) => {
       if (!s.link) {
         return {
           tone: 'bad',
-          text: 'Local bridge offline — run `pnpm dev` or switch to Direct mode in Hardware.',
+          text: 'Local bridge offline. run `pnpm dev` or switch to Direct mode in Hardware.',
         };
       }
       if (s.midi && !s.display) {
         return {
           tone: 'warn',
-          text: 'Push display busy — quit Ableton Live so its background Push3 process releases USB.',
+          text: 'Push display busy. quit Ableton Live so its background Push3 process releases USB.',
         };
       }
     }

@@ -73,7 +73,7 @@ export const explore: Demo = {
   Panel: () => (
     <>
       <h2>Explore</h2>
-      <p>Every pad, knob, button, and touch strip mirrors between the 3D Push and live hardware—including the 960×160 screen.</p>
+      <p>Every pad, knob, button, and touch strip mirrors between the 3D Push and live hardware, the 960×160 screen too.</p>
       <div class="guide-list">
         <div class="guide-item">
           <span class="guide-k">64 Pads</span>
