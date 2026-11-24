@@ -12,7 +12,10 @@ import type { Demo, Engine } from '../engine/engine.ts';
 const synth = new Synth();
 const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const [mode, setModeSignal] = createSignal<PressureMode>('mpe');
-const [soundOn, setSoundOn] = createSignal(false);
+/** Sound is on unless the user turns it off. */
+const [soundOn, setSoundOn] = createSignal(true);
+/** The browser lets audio start only after a click or key press on the page; until then this is false. */
+const [audioRunning, setAudioRunning] = createSignal(false);
 const [bendRange, setBendRange] = createSignal(2);
 const s = { root: 48, trails: [] as Array<{ x: number; y: number; r: number; hue: number; age: number }> };
 
@@ -28,10 +31,17 @@ const MODE_LABEL: Record<PressureMode, string> = {
 
 let current: Engine | null = null;
 const setMode = (m: PressureMode) => { setModeSignal(m); current?.setPressureMode(m); };
-const toggleSound = async () => {
-  if (synth.running) await synth.ctx!.suspend(); else await synth.start();
-  setSoundOn(synth.running);
+const startAudio = async () => {
+  await synth.start();
+  if (synth.ctx) synth.ctx.onstatechange = () => setAudioRunning(synth.running);
+  setAudioRunning(synth.running);
 };
+const toggleSound = async () => {
+  setSoundOn(!soundOn());
+  if (soundOn()) await startAudio(); else await synth.ctx?.suspend();
+};
+/** Any click or key press on the page starts the sound, if it is on and the browser blocked it. */
+const onGesture = () => { if (soundOn() && !synth.running) void startAudio(); };
 
 export const expression: Demo = {
   id: 'expression',
@@ -42,6 +52,10 @@ export const expression: Demo = {
     Effect.gen(function* () {
       current = app;
       yield* app.usePressureMode(mode()); // restored to poly when we leave
+      // Sound starts at once if the browser allows it, else on the first click or key press.
+      if (soundOn()) yield* Effect.promise(() => startAudio());
+      for (const t of ['pointerdown', 'keydown'] as const) addEventListener(t, onGesture, { capture: true, passive: true });
+      yield* Effect.addFinalizer(() => Effect.sync(() => { for (const t of ['pointerdown', 'keydown'] as const) removeEventListener(t, onGesture, { capture: true }); }));
       yield* Effect.addFinalizer(() => Effect.sync(() => { for (const id of [...synth.voices.keys()]) synth.noteOff(id); current = null; }));
     }),
 
@@ -59,7 +73,7 @@ export const expression: Demo = {
     } else if (ev.type === 'button' && ev.pressed) {
       const m = MODES[ev.id];
       if (m) setMode(m);
-      if (ev.id === 'lower5' && synth.ctx) void toggleSound();
+      if (ev.id === 'lower5') void toggleSound();
       if (ev.id === 'lower7' || ev.id === 'octaveDown') s.root = Math.max(12, s.root - 12);
       if (ev.id === 'lower8' || ev.id === 'octaveUp') s.root = Math.min(84, s.root + 12);
     }
@@ -138,7 +152,8 @@ export const expression: Demo = {
           </For>
         </div>
         <div class="row">
-          <button type="button" classList={{ active: soundOn() }} onClick={toggleSound}>{soundOn() ? 'Sound on' : 'Enable sound'}</button>
+          <button type="button" classList={{ active: soundOn() }} onClick={toggleSound}>{soundOn() ? 'Sound on' : 'Sound off'}</button>
+          <Show when={soundOn() && !audioRunning()}><span class="muted">Click anywhere on the page to start the sound (a browser rule).</span></Show>
           <label class="toggle">Bend range
             <input type="range" class="range-input" min="0" max="24" step="1" value={bendRange()} onInput={(e) => { synth.bendRange = +e.currentTarget.value; setBendRange(synth.bendRange); }} />
             {bendRange()} st
@@ -158,7 +173,7 @@ export const expression: Demo = {
             </Show>
           </div>
         </div>
-        <p class="muted">Pads are laid out in fourths like Push's default (blue = C). Lower display buttons switch modes, toggle sound (after you enable it here once) and shift octaves. Knob 1 sets the bend range.</p>
+        <p class="muted">Pads are laid out in fourths like Push's default (blue = C). Lower display buttons switch modes, turn the sound on and off and shift octaves. Knob 1 sets the bend range.</p>
       </>
     );
   },
