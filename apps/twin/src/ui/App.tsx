@@ -206,6 +206,11 @@ const TopBar: Component<{
                 <span class="brand-tag">Twin</span>
               </div>
 
+              <a class="repo-link" href={REPO_URL} target="_blank" rel="noopener" title="Source code on GitHub">
+                <GitHubIcon />
+                <span><span class="repo-owner">nicu-chiciuc/</span>push3-twin</span>
+              </a>
+
               <Show when={!presentation().leftDesktopOpen}>
                 <button
                   type="button"
@@ -221,17 +226,6 @@ const TopBar: Component<{
             </div>
 
             <div class="top-right">
-              <a
-                class="icon-btn"
-                href={REPO_URL}
-                target="_blank"
-                rel="noopener"
-                aria-label="Source code on GitHub"
-                title="Source code on GitHub"
-              >
-                <GitHubIcon />
-              </a>
-
               <Show when={props.needsConnect}>
                 <button type="button" class="primary connect-btn" onClick={() => props.onConnect()}>
                   <UsbIcon />
@@ -294,7 +288,7 @@ const TopBar: Component<{
         </nav>
 
         <a
-          class="icon-btn"
+          class="icon-btn repo-icon"
           href={REPO_URL}
           target="_blank"
           rel="noopener"

@@ -249,6 +249,39 @@ a.icon-btn:focus-visible {
   color: var(--muted);
 }
 
+/* The source on GitHub: a labelled button beside the brand (an icon alone was easy to miss) */
+.repo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px;
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.repo-link:hover {
+  background: var(--surface-3);
+}
+.repo-link svg {
+  flex-shrink: 0;
+}
+.repo-owner {
+  color: var(--text-2);
+}
+/* phones: the icon only, but as visible as the buttons beside it */
+a.icon-btn.repo-icon {
+  color: var(--text);
+  background: var(--surface-2);
+  border-color: var(--line-strong);
+}
+
 .active-demo-chip {
   display: inline-flex;
   align-items: center;
