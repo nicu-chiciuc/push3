@@ -12,13 +12,14 @@ import { ripple } from './demos/ripple.tsx';
 import { cssKnobs } from './demos/css-knobs.tsx';
 import { studio } from './demos/studio.tsx';
 import { snake } from './demos/snake.tsx';
+import { blocks } from './demos/blocks.tsx';
 import { videoDeck } from './demos/video.tsx';
 import './styles.css';
 
-// The first 8 tabs sit on the 8 upper display buttons. CSS Knobs (its output is a card on the page) and
-// Test (a diagnostic tool, not a show) are the ninth and tenth tabs, reached from the page only (tab
-// list, or keys 9 and 0).
-const engine = new Engine([chimera, videoDeck, explore, paint, expression, ripple, studio, snake, cssKnobs, test]);
+// The first 8 tabs sit on the 8 upper display buttons. Screen and CSS Knobs (both are driven from the
+// page) and Test (a diagnostic tool, not a show) come after them and are reached from the page only:
+// the tab list, or keys 9 and 0 for the ninth and tenth.
+const engine = new Engine([chimera, videoDeck, explore, paint, expression, ripple, blocks, snake, studio, cssKnobs, test]);
 Object.assign(window, { push3: engine }); // handy for poking at things from DevTools
 
 // Which transport: ?link=bridge|direct, else the local bridge on localhost and direct everywhere else.
