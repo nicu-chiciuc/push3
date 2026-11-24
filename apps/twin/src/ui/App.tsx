@@ -102,13 +102,13 @@ const Shell: Component<{ engine: Engine }> = (props) => {
       if (s.midi && !s.display) {
         return {
           tone: 'warn',
-          text: 'Pads connected, screen busy. quit Ableton Live and click Connect Push.',
+          text: 'Pads connected, screen busy. Quit Ableton Live and click Connect Push.',
         };
       }
       if (!s.midi && s.display) {
         return {
           tone: 'warn',
-          text: 'Screen connected, MIDI blocked. click Connect Push and allow MIDI access.',
+          text: 'Screen connected, MIDI blocked. Click Connect Push and allow MIDI access.',
         };
       }
       return null;
@@ -117,13 +117,13 @@ const Shell: Component<{ engine: Engine }> = (props) => {
       if (!s.link) {
         return {
           tone: 'bad',
-          text: 'Local bridge offline. run `pnpm dev` or switch to Direct mode in Hardware.',
+          text: 'Local bridge offline. Run `pnpm dev` or switch to Direct mode in Hardware.',
         };
       }
       if (s.midi && !s.display) {
         return {
           tone: 'warn',
-          text: 'Push display busy. quit Ableton Live so its background Push3 process releases USB.',
+          text: 'Push display busy. Quit Ableton Live so its background Push3 process releases USB.',
         };
       }
     }
