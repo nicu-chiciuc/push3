@@ -31,17 +31,29 @@ const MODE_LABEL: Record<PressureMode, string> = {
 
 let current: Engine | null = null;
 const setMode = (m: PressureMode) => { setModeSignal(m); current?.setPressureMode(m); };
-const startAudio = async () => {
-  await synth.start();
+/** Never await this outside a click: while the browser blocks audio, `resume()` stays pending. */
+const startAudio = () => {
+  const resumed = synth.start();
   if (synth.ctx) synth.ctx.onstatechange = () => setAudioRunning(synth.running);
   setAudioRunning(synth.running);
+  return resumed;
 };
-const toggleSound = async () => {
+const flipSound = () => {
   setSoundOn(!soundOn());
-  if (soundOn()) await startAudio(); else await synth.ctx?.suspend();
+  if (soundOn()) void startAudio(); else void synth.ctx?.suspend();
 };
-/** Any click or key press on the page starts the sound, if it is on and the browser blocked it. */
-const onGesture = () => { if (soundOn() && !synth.running) void startAudio(); };
+/** The panel button. */
+const toggleSound = () => {
+  // On but still blocked: this click is what the browser waits for, so start, do not turn off.
+  if (soundOn() && !synth.running) { void startAudio(); return; }
+  flipSound();
+};
+/** Any click or key press on the page starts the sound, if it is on and the browser blocked it.
+ *  The sound button handles its own click. */
+const onGesture = (ev: Event) => {
+  if (ev.target instanceof Element && ev.target.closest('[data-sound-toggle]')) return;
+  if (soundOn() && !synth.running) void startAudio();
+};
 
 export const expression: Demo = {
   id: 'expression',
@@ -53,7 +65,7 @@ export const expression: Demo = {
       current = app;
       yield* app.usePressureMode(mode()); // restored to poly when we leave
       // Sound starts at once if the browser allows it, else on the first click or key press.
-      if (soundOn()) yield* Effect.promise(() => startAudio());
+      if (soundOn()) void startAudio(); // no wait: the browser may hold it until the first click
       for (const t of ['pointerdown', 'keydown'] as const) addEventListener(t, onGesture, { capture: true, passive: true });
       yield* Effect.addFinalizer(() => Effect.sync(() => { for (const t of ['pointerdown', 'keydown'] as const) removeEventListener(t, onGesture, { capture: true }); }));
       yield* Effect.addFinalizer(() => Effect.sync(() => { for (const id of [...synth.voices.keys()]) synth.noteOff(id); current = null; }));
@@ -73,7 +85,7 @@ export const expression: Demo = {
     } else if (ev.type === 'button' && ev.pressed) {
       const m = MODES[ev.id];
       if (m) setMode(m);
-      if (ev.id === 'lower5') void toggleSound();
+      if (ev.id === 'lower5') flipSound(); // a Push button is not a page click, so it cannot unblock audio
       if (ev.id === 'lower7' || ev.id === 'octaveDown') s.root = Math.max(12, s.root - 12);
       if (ev.id === 'lower8' || ev.id === 'octaveUp') s.root = Math.min(84, s.root + 12);
     }
@@ -86,7 +98,7 @@ export const expression: Demo = {
     }
     (['channel', 'poly', 'mpe'] as const).forEach((m, i) => app.leds.button(20 + i, mode() === m ? this.color : [70, 35, 0]));
     app.leds.button(23, null);
-    app.leds.button(24, soundOn() ? [0, 220, 90] : [0, 40, 15]);
+    app.leds.button(24, !soundOn() ? [0, 40, 15] : audioRunning() ? [0, 220, 90] : [255, 150, 0]);
     app.leds.button(25, null);
     app.leds.button(26, [60, 60, 60]);
     app.leds.button(27, [60, 60, 60]);
@@ -130,7 +142,7 @@ export const expression: Demo = {
     }
   },
 
-  footer: () => ['Chan AT', 'Poly AT', 'MPE', '', soundOn() ? 'Sound on' : 'Sound off', '', 'Oct −', 'Oct +'],
+  footer: () => ['Chan AT', 'Poly AT', 'MPE', '', !soundOn() ? 'Sound off' : audioRunning() ? 'Sound on' : 'Click page', '', 'Oct −', 'Oct +'],
   footerActive: (i) => (i === 0 && mode() === 'channel') || (i === 1 && mode() === 'poly') || (i === 2 && mode() === 'mpe') || (i === 4 && soundOn()),
 
   Panel: (props) => {
@@ -152,7 +164,7 @@ export const expression: Demo = {
           </For>
         </div>
         <div class="row">
-          <button type="button" classList={{ active: soundOn() }} onClick={toggleSound}>{soundOn() ? 'Sound on' : 'Sound off'}</button>
+          <button type="button" data-sound-toggle classList={{ active: soundOn() && audioRunning() }} onClick={toggleSound}>{!soundOn() ? 'Sound off' : audioRunning() ? 'Sound on' : 'Start sound'}</button>
           <Show when={soundOn() && !audioRunning()}><span class="muted">Click anywhere on the page to start the sound (a browser rule).</span></Show>
           <label class="toggle">Bend range
             <input type="range" class="range-input" min="0" max="24" step="1" value={bendRange()} onInput={(e) => { synth.bendRange = +e.currentTarget.value; setBendRange(synth.bendRange); }} />
