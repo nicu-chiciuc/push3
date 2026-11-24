@@ -60,8 +60,10 @@ interface GagPadSpec {
   readonly label: string;
   readonly short: string;
   readonly color: RGB;
-  readonly group: 'voice' | 'audio' | 'visual';
+  readonly group: 'voice' | 'audio' | 'visual' | 'reset';
 }
+
+const RESET_PAD = 75;
 
 const GAG_PADS: ReadonlyArray<GagPadSpec> = [
   // Row 7 (top row: 92..99): Voice & Speed
@@ -91,6 +93,8 @@ const GAG_PADS: ReadonlyArray<GagPadSpec> = [
   { note: 81, label: 'Noir B&W', short: 'NOIR', color: [200, 208, 220], group: 'visual' },
   { note: 82, label: 'Invert Flash', short: 'INVERT', color: [255, 255, 255], group: 'visual' },
   { note: 83, label: 'Zoom Punch 2.2×', short: 'ZOOM 2.2×', color: [95, 230, 125], group: 'visual' },
+  // Row 4, right end (just under Zoom Punch): one press puts every effect back to normal.
+  { note: RESET_PAD, label: 'Reset all effects', short: 'RESET FX', color: [255, 255, 255], group: 'reset' },
 ];
 
 const GAG_BY_NOTE = new Map(GAG_PADS.map((p) => [p.note, p]));
@@ -678,8 +682,6 @@ function resetFx() {
   setDjFilter(0);
   setEchoAmt(0);
   setDriveAmt(0);
-  setZoom(1.0);
-  setPanY(0.42);
   setVisualFx('clean');
   showHud('FX', 'ALL RESET');
 }
@@ -1303,6 +1305,7 @@ export const videoDeck: Demo = {
       const gag = GAG_BY_NOTE.get(n);
       if (!gag) return;
       if (ev.action === 'down') {
+        if (n === RESET_PAD) { resetFx(); return; }
         if (n === 91) {
           const t = Math.max(0, getEffectiveTime() - 3);
           seekTo(t, true);
@@ -1461,7 +1464,7 @@ export const videoDeck: Demo = {
         } else {
           const gag = GAG_BY_NOTE.get(n);
           if (gag) {
-            const active = heldGags.has(n);
+            const active = heldGags.has(n) || (n === RESET_PAD && !!app.pads.get(n)?.down);
             const [r, gg, b] = gag.color;
             app.leds.pad(n, active ? [255, 255, 255] : [Math.round(r * 0.48), Math.round(gg * 0.48), Math.round(b * 0.48)]);
           } else {
@@ -1659,6 +1662,7 @@ export const videoDeck: Demo = {
     let fileInput: HTMLInputElement | undefined;
 
     const pressGag = (note: number) => {
+      if (note === RESET_PAD) { resetFx(); return; }
       if (note === 91) {
         seekTo(Math.max(0, getEffectiveTime() - 3), true);
         return;
@@ -2031,7 +2035,7 @@ export const videoDeck: Demo = {
                 <button
                   type="button"
                   class="vdeck-gag-btn"
-                  style={{ '--gc': css(g.color) }}
+                  style={{ '--gc': css(g.color), ...(g.note === RESET_PAD ? { 'grid-column': '1 / -1' } : {}) }}
                   title={g.label}
                   onPointerDown={() => pressGag(g.note)}
                   onPointerUp={() => releaseGag(g.note)}
