@@ -209,6 +209,9 @@ importers:
       '@mediabunny/dts':
         specifier: 1.66.0
         version: 1.66.0(mediabunny@1.66.0)
+      '@push3/chimera':
+        specifier: workspace:*
+        version: link:../../packages/chimera
       '@push3/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -261,6 +264,21 @@ importers:
       vite-plugin-solid:
         specifier: ^2.11.16
         version: 2.11.16(solid-js@1.9.19)(vite@8.3.8(@types/node@26.6.6)(yaml@2.9.1))
+
+  packages/chimera:
+    devDependencies:
+      '@types/three':
+        specifier: ^0.170.0
+        version: 0.170.0
+      three:
+        specifier: ^0.170.0
+        version: 0.170.0
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vite:
+        specifier: ^8.3.8
+        version: 8.3.8(@types/node@26.6.6)(yaml@2.9.1)
 
   packages/node:
     dependencies:

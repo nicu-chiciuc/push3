@@ -1,0 +1,28 @@
+{
+  "name": "@push3/chimera",
+  "version": "0.1.0",
+  "description": "CHIMERA, a physical-modeling voice (Rust engine as WASM in an AudioWorklet, three.js head), pinned for the Chimera tab",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/api.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "sync": "node ../../scripts/sync-chimera.ts"
+  },
+  "peerDependencies": {
+    "three": ">=0.170.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.170.0",
+    "three": "^0.170.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  }
+}

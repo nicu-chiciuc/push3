@@ -1,0 +1,19 @@
+{
+  // The upstream files are CHIMERA's, unchanged, so they are checked with CHIMERA's own compiler
+  // options (its tsconfig.json), not this repository's stricter base. The app sees only src/api.ts.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": ["vite/client"]
+  },
+  "include": ["src", "upstream/src"]
+}

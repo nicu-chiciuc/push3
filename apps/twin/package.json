@@ -14,6 +14,7 @@
   "dependencies": {
     "@mediabunny/ac3": "1.66.0",
     "@mediabunny/dts": "1.66.0",
+    "@push3/chimera": "workspace:*",
     "@push3/protocol": "workspace:*",
     "@push3/web": "workspace:*",
     "effect": "^4.1.4",

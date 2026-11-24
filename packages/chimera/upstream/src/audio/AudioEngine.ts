@@ -1,0 +1,331 @@
+/**
+ * Main-thread side of the audio engine: AudioContext + worklet node + analyser, coalesced
+ * parameter messages (at most one per animation frame per kind) and telemetry fan-out.
+ */
+import workletUrl from "../worklet/processor.ts?worker&url";
+import { chimeraModule } from "../wasm/chimera.ts";
+import { inPlugin, ipc, sendToPlugin, setParam, volumeToDb } from "./pluginBridge.ts";
+import { SampleAnalyser, type Analyser } from "./sampleAnalyser.ts";
+import type { ToWorklet, FromWorklet, TelemetryMessage, PlannedMessage, CreatureTelemetryMessage } from "../worklet/protocol.ts";
+import type { BodyMix } from "../wasm/types.ts";
+import type { HumanArtic } from "../wasm/types.ts";
+import type { VoiceSource } from "../wasm/types.ts";
+
+type Listener = (t: TelemetryMessage) => void;
+
+const ANALYSER_SIZE = 4096;
+const ANALYSER_SMOOTHING = 0.6;
+const FAST_ANALYSER_SIZE = 2048;
+
+export class AudioEngine {
+  ctx: AudioContext | null = null;
+  private node: AudioWorkletNode | null = null;
+  analyser: Analyser | null = null;
+  /** unsmoothed, short-window analyser for the spectrogram */
+  analyserFast: Analyser | null = null;
+  /** long time-domain window for the waveform scope */
+  analyserScope: AnalyserNode | null = null;
+  private master: GainNode | null = null;
+  /** "close mic" chain: proximity bass, presence, compression (beatboxers cup the mic) */
+  private micIn: AudioNode | null = null;
+  private micOn = false;
+  latest: TelemetryMessage | null = null;
+  /** performance.now() when `latest` arrived */
+  private latestAt = 0;
+  latestCreature: CreatureTelemetryMessage | null = null;
+  /** load of the most recent telemetry of either kind */
+  load = 0;
+  sampleRate = 48000;
+  private listeners = new Set<Listener>();
+  private pendingArtic: Partial<HumanArtic> | null = null;
+  private pendingTipFree: boolean | undefined;
+  private pendingSource: Partial<VoiceSource> | null = null;
+  private pendingCParams: Record<string, number> | null = null;
+  private flushScheduled = false;
+  private readyListeners = new Set<() => void>();
+  private plannedListeners = new Set<(p: PlannedMessage) => void>();
+  /** most recent planned utterance (for timelines) */
+  lastPlan: PlannedMessage | null = null;
+  private speakId = 0;
+  error: string | null = null;
+
+  /** The human voice's clock now (s), extrapolated from the latest telemetry; null if none. */
+  voiceClock(): number | null {
+    if (!this.latest) return null;
+    return this.latest.t.clock + Math.min(0.25, (performance.now() - this.latestAt) / 1000);
+  }
+
+  get running(): boolean {
+    return !!this.ctx && this.ctx.state === "running";
+  }
+
+  async start(): Promise<void> {
+    if (this.ctx) {
+      await this.ctx.resume();
+      return;
+    }
+    const ctx = new AudioContext({ latencyHint: "interactive" });
+    this.ctx = ctx;
+    this.sampleRate = ctx.sampleRate;
+    await ctx.audioWorklet.addModule(workletUrl);
+    // the worklet instantiates the engine from the module compiled at startup (main.tsx)
+    const node = new AudioWorkletNode(ctx, "chimera", { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { module: chimeraModule() } });
+    this.node = node;
+    const master = ctx.createGain();
+    master.gain.value = 0.8;
+    this.master = master;
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = ANALYSER_SIZE;
+    analyser.smoothingTimeConstant = ANALYSER_SMOOTHING;
+    this.analyser = analyser;
+    const fast = ctx.createAnalyser();
+    fast.fftSize = FAST_ANALYSER_SIZE;
+    fast.smoothingTimeConstant = 0;
+    this.analyserFast = fast;
+    const scope = ctx.createAnalyser();
+    scope.fftSize = 16384;
+    this.analyserScope = scope;
+    // close-mic chain: proximity effect (low shelf), presence peak, fast compressor, make-up
+    const shelf = ctx.createBiquadFilter();
+    shelf.type = "lowshelf";
+    shelf.frequency.value = 120;
+    shelf.gain.value = 9;
+    const presence = ctx.createBiquadFilter();
+    presence.type = "peaking";
+    presence.frequency.value = 3500;
+    presence.Q.value = 0.8;
+    presence.gain.value = 3;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -28;
+    comp.knee.value = 8;
+    comp.ratio.value = 5;
+    comp.attack.value = 0.002;
+    comp.release.value = 0.12;
+    const makeup = ctx.createGain();
+    makeup.gain.value = 2.2;
+    shelf.connect(presence).connect(comp).connect(makeup).connect(master);
+    this.micIn = shelf;
+    node.connect(this.micOn ? shelf : master);
+    master.connect(ctx.destination);
+    master.connect(analyser);
+    master.connect(fast);
+    master.connect(scope);
+    node.port.onmessage = (e: MessageEvent<FromWorklet>) => this.receive(e.data);
+    await ctx.resume();
+  }
+
+  /** In the plugin there's no Web Audio: the same analysers, fed with what the audio thread sends. */
+  pluginAnalysers(): { feed: (samples: Float32Array) => void } {
+    const slow = new SampleAnalyser(ANALYSER_SIZE, ANALYSER_SMOOTHING);
+    const fast = new SampleAnalyser(FAST_ANALYSER_SIZE, 0);
+    this.analyser = slow;
+    this.analyserFast = fast;
+    return {
+      feed: (samples) => {
+        slow.push(samples);
+        fast.push(samples);
+      },
+    };
+  }
+
+  /** A message from the engine: the worklet's, or the plugin's as the page's poll decodes it. */
+  receive(m: FromWorklet): void {
+    if (m.type === "telemetry") {
+      this.latest = m;
+      this.latestAt = performance.now();
+      this.latestCreature = null;
+      this.load = m.load;
+      for (const l of this.listeners) l(m);
+    } else if (m.type === "ctelemetry") {
+      this.latestCreature = m;
+      this.latest = null;
+      this.load = m.load;
+    } else if (m.type === "planned") {
+      this.lastPlan = m;
+      for (const l of this.plannedListeners) l(m);
+    } else if (m.type === "ready") {
+      for (const l of this.readyListeners) l();
+    } else if (m.type === "error") {
+      this.error = m.message;
+      console.error("worklet:", m.message);
+    }
+  }
+
+  onTelemetry(l: Listener): () => void {
+    this.listeners.add(l);
+    return () => this.listeners.delete(l);
+  }
+
+  onPlanned(l: (p: PlannedMessage) => void): () => void {
+    this.plannedListeners.add(l);
+    return () => this.plannedListeners.delete(l);
+  }
+
+  /** Send a gestural plan (times relative to now). Returns the request id. */
+  schedule(plan: { gestures: import("../wasm/types.ts").Gesture[]; segments: import("../wasm/types.ts").PlannedSegment[]; end: number }, replace = true): number {
+    const id = ++this.speakId;
+    this.send({ type: "schedule", gestures: plan.gestures, segments: plan.segments, end: plan.end, id, replace });
+    return id;
+  }
+
+  /** Switch voice ("human" or a creature id), starting the creature from the given settings. */
+  setCreature(id: string, params?: Record<string, number>): void {
+    // settings still waiting for the next frame belong to the previous creature
+    this.pendingCParams = null;
+    this.send({ type: "creature", id, params });
+  }
+
+  setCreatureParams(values: Record<string, number>): void {
+    this.pendingCParams = { ...(this.pendingCParams ?? {}), ...values };
+    this.scheduleFlush();
+  }
+
+  playCall(id: string, pitch?: number, amp?: number): void {
+    this.send({ type: "call", id, pitch, amp });
+  }
+
+  stopCall(): void {
+    this.send({ type: "stopCall" });
+  }
+
+  stopSpeech(): void {
+    this.send({ type: "stopSpeech" });
+  }
+
+  onReady(l: () => void): () => void {
+    this.readyListeners.add(l);
+    return () => this.readyListeners.delete(l);
+  }
+
+  private send(m: ToWorklet): void {
+    if (inPlugin) sendToPlugin(m);
+    else this.node?.port.postMessage(m);
+  }
+
+  // ---- what only the plugin has: there the keys, the lyrics and the mode belong to Rust
+
+  /** A key on the page went down or up. */
+  pluginNote(midi: number, on: boolean, velocity?: number): void {
+    ipc({ type: "note", midi, on, velocity });
+  }
+
+  pluginLyrics(text: string): void {
+    ipc({ type: "lyrics", text });
+  }
+
+  pluginCursor(index: number): void {
+    ipc({ type: "cursor", index });
+  }
+
+  pluginMode(mode: string): void {
+    ipc({ type: "mode", mode });
+  }
+
+  pluginHold(on: boolean): void {
+    ipc({ type: "hold", on });
+  }
+
+  /** The text to say changed: Rust plans its lines. */
+  pluginSpeech(edit: { text?: string; ipa?: boolean; rate?: number }): void {
+    ipc({ type: "speech", ...edit });
+  }
+
+  pluginSpeechCursor(index: number): void {
+    ipc({ type: "speechCursor", index });
+  }
+
+  /** Say the next line, as a note at the natural pitch would. */
+  pluginSpeak(): void {
+    ipc({ type: "speak" });
+  }
+
+  /** Say this once. */
+  pluginSayIpa(ipa: string): void {
+    ipc({ type: "sayIpa", ipa });
+  }
+
+  /** Whether the sequencer follows the host's transport. */
+  pluginFollowHost(on: boolean): void {
+    ipc({ type: "followHost", on });
+  }
+
+  /** Route the voice through the close-mic chain (on) or straight to the output (off). */
+  setMic(on: boolean): void {
+    if (inPlugin) return ipc({ type: "mic", on });
+    if (on === this.micOn) return;
+    this.micOn = on;
+    if (!this.node || !this.master || !this.micIn) return;
+    this.node.disconnect();
+    this.node.connect(on ? this.micIn : this.master);
+  }
+
+  setBeat(m: { steps?: import("../wasm/types.ts").BeatStep[] | (import("../wasm/types.ts").BeatStep | null)[]; bpm?: number; swing?: number; playing?: boolean; preset?: string | null }): void {
+    this.send({ type: "beat", ...m });
+  }
+
+  /** End the sung note (open-ended gestures) with this tag. */
+  release(tag: number): void {
+    this.send({ type: "release", tag });
+  }
+
+  /** Gestures planned on the main thread, times relative to arrival + lead (live playing). */
+  scheduleGestures(gestures: import("../wasm/types.ts").Gesture[], lead = 0.006): void {
+    this.send({ type: "schedule", gestures, segments: [], end: 0, id: ++this.speakId, replace: false, lead });
+  }
+
+  beatHit(id: string, note?: number, accent?: number): void {
+    this.send({ type: "beatHit", id, note, accent });
+  }
+
+  setVolume(v: number): void {
+    if (inPlugin) setParam("gain", volumeToDb(v));
+    else if (this.master && this.ctx) this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.02);
+  }
+
+  setBody(body: BodyMix): void {
+    this.send({ type: "body", body });
+  }
+
+  gate(level: number): void {
+    this.send({ type: "gate", level });
+  }
+
+  /** Coalesced: many calls within a frame become one message. (In the plugin Rust merges them.) */
+  setArtic(values: Partial<HumanArtic>, tipFree?: boolean): void {
+    if (inPlugin) return this.send({ type: "artic", values, tipFree });
+    this.pendingArtic = { ...(this.pendingArtic ?? {}), ...values };
+    if (tipFree !== undefined) this.pendingTipFree = tipFree;
+    this.scheduleFlush();
+  }
+
+  setSource(values: Partial<VoiceSource>): void {
+    if (inPlugin) return this.send({ type: "source", values });
+    this.pendingSource = { ...(this.pendingSource ?? {}), ...values };
+    this.scheduleFlush();
+  }
+
+  private scheduleFlush(): void {
+    if (this.flushScheduled) return;
+    this.flushScheduled = true;
+    const flush = () => {
+      this.flushScheduled = false;
+      if (this.pendingArtic || this.pendingTipFree !== undefined) {
+        this.send({ type: "artic", values: this.pendingArtic ?? {}, tipFree: this.pendingTipFree });
+        this.pendingArtic = null;
+        this.pendingTipFree = undefined;
+      }
+      if (this.pendingSource) {
+        this.send({ type: "source", values: this.pendingSource });
+        this.pendingSource = null;
+      }
+      if (this.pendingCParams) {
+        this.send({ type: "cparams", values: this.pendingCParams });
+        this.pendingCParams = null;
+      }
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(flush);
+    else setTimeout(flush, 16);
+  }
+}
+
+export const engine = new AudioEngine();
