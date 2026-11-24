@@ -202,7 +202,7 @@ const [duration, setDuration] = createSignal(0);
 const [framingMode, setFramingMode] = createSignal<FramingMode>('cover-deck');
 const [deckWidth, setDeckWidth] = createSignal(480); // right control deck width in cover-deck: half the screen by default
 
-/** Knob turns needed for one step of a discrete knob (visual FX, framing), so it is hard to skip a choice. */
+/** Knob turns needed for one step of a discrete knob (visual FX), so it is hard to skip a choice. */
 const DETENT = 20; // the encoders send about 210 ticks per turn, so one step every ~35 degrees
 const detentAcc = new Map<string, number>();
 /** Accumulate a knob's turns and return whole steps (+1, -1 or 0); reversing direction starts over. */
@@ -223,6 +223,7 @@ const [dialogue, setDialogue] = createSignal(false); // compress loud and quiet 
 const [tapeLink, setTapeLink] = createSignal(false);
 const [djFilter, setDjFilter] = createSignal(0);    // -1..+1
 const [echoAmt, setEchoAmt] = createSignal(0);      // 0..0.85
+const [driveAmt, setDriveAmt] = createSignal(0);    // 0..1 saturation ("deep fry" for the ears)
 const [zoom, setZoom] = createSignal(1.0);          // 1.0..3.0
 const [panY, setPanY] = createSignal(0.42);         // 0..1 (0.42 slightly favors eyes/faces!)
 const [visualFx, setVisualFx] = createSignal<VisualFx>('clean');
@@ -602,6 +603,73 @@ function switchAudioTrack(idx: number) {
   showHud('AUDIO', `${tracks[idx]!.lang} · ${tracks[idx]!.title}`);
 }
 
+// ── The 8 knobs above the screen, left to right: six for the sound, two for the picture ──
+// Zoom and the framing mode are set-and-forget: they live in the panel (framing also on the last
+// button under the screen).
+interface KnobSpec {
+  readonly id: string;
+  readonly label: string;
+  /** Short name for the meters on the Push screen. */
+  readonly short: string;
+  readonly color: number;
+  readonly turn: (delta: number) => void;
+  readonly value: () => string;
+}
+
+const signed = (v: number, digits = 1) => `${v >= 0 ? '+' : ''}${v.toFixed(digits)}`;
+const filterText = (v: number) => (Math.abs(v) < 0.04 ? 'OPEN' : v < 0 ? `LP ${Math.round(-v * 100)}%` : `HP ${Math.round(v * 100)}%`);
+
+const KNOBS: ReadonlyArray<KnobSpec> = [
+  {
+    id: 'e1', label: 'SPEED', short: 'SPD', color: 0x38bdf8,
+    turn: (d) => setSpeed(clamp(Math.round((speed() + d * 0.025) * 100) / 100, 0.25, 3.0)),
+    value: () => `${speed().toFixed(2)}×`,
+  },
+  {
+    id: 'e2', label: 'VOICE PITCH', short: 'PIT', color: 0xf472b6,
+    turn: (d) => setPitch(clamp(pitch() + d * 0.25, -12, 12)),
+    value: () => `${signed(pitch())} st`,
+  },
+  {
+    // Formant = the size of the body that speaks. Pitch stays; + is a small cartoon, - is a giant.
+    id: 'e3', label: 'VOICE SIZE', short: 'SIZ', color: 0x34d399,
+    turn: (d) => { const next = clamp(formant() + d * 0.1, -12, 12); setFormant(Math.abs(next) < 0.15 ? 0 : next); },
+    value: () => (formant() === 0 ? 'NATURAL' : `${formant() > 0 ? 'SMALL' : 'BIG'} ${signed(formant())}`),
+  },
+  {
+    id: 'e4', label: 'DJ FILTER', short: 'FLT', color: 0xfacc15,
+    turn: (d) => { const next = clamp(djFilter() + d * 0.02, -1, 1); setDjFilter(Math.abs(next) < 0.03 ? 0 : next); },
+    value: () => filterText(djFilter()),
+  },
+  {
+    id: 'e5', label: 'DUB ECHO', short: 'ECH', color: 0x7de6ff,
+    turn: (d) => setEchoAmt(clamp(echoAmt() + d * 0.01, 0, 0.85)),
+    value: () => (echoAmt() < 0.005 ? 'OFF' : `${Math.round((echoAmt() / 0.85) * 100)}%`),
+  },
+  {
+    id: 'e6', label: 'DRIVE', short: 'DRV', color: 0xff551e,
+    turn: (d) => setDriveAmt(clamp(driveAmt() + d * 0.012, 0, 1)),
+    value: () => (driveAmt() < 0.005 ? 'CLEAN' : `${Math.round(driveAmt() * 100)}%`),
+  },
+  {
+    id: 'e7', label: 'VISUAL FX', short: 'VFX', color: 0xc084fc,
+    turn: (d) => {
+      const step = detent('e7', d);
+      if (!step) return;
+      const cur = VISUAL_FX.findIndex((f) => f.id === visualFx());
+      setVisualFx(VISUAL_FX[(((cur + step) % VISUAL_FX.length) + VISUAL_FX.length) % VISUAL_FX.length]!.id);
+    },
+    value: () => (VISUAL_FX.find((f) => f.id === visualFx())?.label ?? '').toUpperCase(),
+  },
+  {
+    id: 'e8', label: 'PICTURE UP / DOWN', short: 'PAN', color: 0x60a5fa,
+    turn: (d) => setPanY(clamp(panY() + d * 0.015, 0, 1)),
+    value: () => `${Math.round(panY() * 100)}%`,
+  },
+];
+const KNOB_BY_ID = new Map(KNOBS.map((k) => [k.id, k]));
+const showKnob = (k: KnobSpec) => showHud(k.label, k.value());
+
 function resetFx() {
   setSpeed(1.0);
   setPitch(0);
@@ -609,6 +677,7 @@ function resetFx() {
   setTapeLink(false);
   setDjFilter(0);
   setEchoAmt(0);
+  setDriveAmt(0);
   setZoom(1.0);
   setPanY(0.42);
   setVisualFx('clean');
@@ -691,7 +760,7 @@ function getEffectiveFx() {
   let effEcho = echoAmt();
   let effZoom = zoom();
   let effVfx = visualFx();
-  let effDrive = effVfx === 'deepfry' ? 0.55 : 0;
+  let effDrive = Math.max(driveAmt(), effVfx === 'deepfry' ? 0.55 : 0);
   let effVol = muted() ? 0 : volume();
   let frozen = false;
 
@@ -709,7 +778,7 @@ function getEffectiveFx() {
   if (heldGags.has(86)) effFilter = -0.86;
   if (heldGags.has(87)) effFilter = 0.86;
   if (heldGags.has(88)) effEcho = 0.8;
-  if (heldGags.has(89)) { effDrive = 0.9; effVfx = 'deepfry'; }
+  if (heldGags.has(89)) { effDrive = Math.max(effDrive, 0.9); effVfx = 'deepfry'; }
   if (heldGags.has(90)) effVol = 0;
 
   if (heldGags.has(76)) frozen = true;
@@ -890,39 +959,18 @@ function drawRightDeck(
     }
   }
 
-  // Row 3: Knob FX Meters (Speed, Pitch, Filter, Formant)
+  // Row 3: one meter per sound knob, in knob order (they show the held gag pads too)
   const meters: Array<{ label: string; val: string; frac: number; color: string; bipolar?: boolean }> = [
-    {
-      label: 'SPD',
-      val: `${fx.effSpeed.toFixed(2)}×${fx.effTape ? 'T' : ''}`,
-      frac: (fx.effSpeed - 0.25) / 2.75,
-      color: '#38bdf8',
-    },
-    {
-      label: 'PIT',
-      val: `${fx.effPitch >= 0 ? '+' : ''}${Math.round(fx.effPitch)}st`,
-      frac: (fx.effPitch + 12) / 24,
-      color: '#f472b6',
-      bipolar: true,
-    },
-    {
-      label: 'FLT',
-      val: Math.abs(fx.effFilter) < 0.04 ? 'OPEN' : fx.effFilter < 0 ? `LP ${Math.round(-fx.effFilter * 100)}%` : `HP ${Math.round(fx.effFilter * 100)}%`,
-      frac: (fx.effFilter + 1) / 2,
-      color: '#facc15',
-      bipolar: true,
-    },
-    {
-      label: 'FMT',
-      val: `${fx.effFormant >= 0 ? '+' : ''}${Math.round(fx.effFormant)}st`,
-      frac: (fx.effFormant + 12) / 24,
-      color: '#34d399',
-      bipolar: true,
-    },
+    { label: 'SPD', val: `${fx.effSpeed.toFixed(2)}×${fx.effTape ? 'T' : ''}`, frac: (fx.effSpeed - 0.25) / 2.75, color: '#38bdf8' },
+    { label: 'PIT', val: `${signed(fx.effPitch, 0)}st`, frac: (fx.effPitch + 12) / 24, color: '#f472b6', bipolar: true },
+    { label: 'SIZ', val: `${signed(fx.effFormant, 0)}st`, frac: (fx.effFormant + 12) / 24, color: '#34d399', bipolar: true },
+    { label: 'FLT', val: filterText(fx.effFilter), frac: (fx.effFilter + 1) / 2, color: '#facc15', bipolar: true },
+    { label: 'ECH', val: `${Math.round((fx.effEcho / 0.85) * 100)}%`, frac: fx.effEcho / 0.85, color: '#7de6ff' },
+    { label: 'DRV', val: `${Math.round(fx.effDrive * 100)}%`, frac: fx.effDrive, color: '#ff551e' },
   ];
 
-  const mTop = 62;
-  const rowH = 16;
+  const mTop = 61;
+  const rowH = 11;
   const splitW = wide ? Math.floor(iw * 0.56) : iw;
 
   meters.forEach((m, idx) => {
@@ -968,7 +1016,7 @@ function drawRightDeck(
     g.fillRect(ix + iw - 66, 130, 66, 22);
     text(g, vfxLabel, ix + iw - 33, 141, { size: 10, weight: 700, color: fx.effVfx === 'clean' ? '#aeb8c6' : '#f9a8d4', font: MONO });
   } else {
-    text(g, `ZOOM ${fx.effZoom.toFixed(2)}× · PAN ${Math.round(panY() * 100)}% · VFX ${fx.effVfx.toUpperCase()}`, ix, 144, {
+    text(g, `VFX ${fx.effVfx.toUpperCase()} · PAN ${Math.round(panY() * 100)}% · ZOOM ${fx.effZoom.toFixed(2)}×`, ix, 144, {
       size: 10,
       weight: 600,
       color: '#9aa5b4',
@@ -1133,14 +1181,7 @@ export const videoDeck: Demo = {
       yield* Effect.sync(() => {
         window.addEventListener('pointerdown', onGesture, { passive: true });
         window.addEventListener('keydown', onGesture, { passive: true });
-        app.twin.markEncoder('e1', 0x38bdf8); // Speed
-        app.twin.markEncoder('e2', 0xf472b6); // Voice Pitch
-        app.twin.markEncoder('e3', 0xfacc15); // DJ Filter
-        app.twin.markEncoder('e4', 0x4ade80); // Zoom
-        app.twin.markEncoder('e5', 0x60a5fa); // Y-Pan
-        app.twin.markEncoder('e6', 0xc084fc); // Visual FX
-        app.twin.markEncoder('e7', 0x34d399); // Formant
-        app.twin.markEncoder('e8', 0xff7048); // Framing Mode
+        for (const k of KNOBS) app.twin.markEncoder(k.id, k.color);
       });
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
@@ -1158,41 +1199,10 @@ export const videoDeck: Demo = {
     // ── Encoders (Top 8 knobs + Jog + Volume) ──
     if (ev.type === 'encoder') {
       const d = ev.delta;
-      if (ev.id === 'e1') {
-        const next = clamp(Math.round((speed() + d * 0.025) * 100) / 100, 0.25, 3.0);
-        setSpeed(next);
-        showHud('SPEED', `${next.toFixed(2)}×`);
-      } else if (ev.id === 'e2') {
-        const next = clamp(pitch() + d * 0.25, -12, 12);
-        setPitch(next);
-        showHud('VOICE PITCH', `${next >= 0 ? '+' : ''}${next.toFixed(1)} st`);
-      } else if (ev.id === 'e3') {
-        const next = clamp(djFilter() + d * 0.02, -1, 1);
-        setDjFilter(Math.abs(next) < 0.03 ? 0 : next);
-        showHud('DJ FILTER', Math.abs(next) < 0.03 ? 'OPEN' : next < 0 ? `LP ${Math.round(-next * 100)}%` : `HP ${Math.round(next * 100)}%`);
-      } else if (ev.id === 'e4') {
-        const next = clamp(zoom() + d * 0.025, 1.0, 3.0);
-        setZoom(next);
-        showHud('ZOOM', `${next.toFixed(2)}×`);
-      } else if (ev.id === 'e5') {
-        const next = clamp(panY() + d * 0.015, 0, 1);
-        setPanY(next);
-        showHud('Y-PAN', `${Math.round(next * 100)}%`);
-      } else if (ev.id === 'e6') {
-        const step = detent('e6', d);
-        if (step) {
-          const curIdx = VISUAL_FX.findIndex((f) => f.id === visualFx());
-          const next = VISUAL_FX[(((curIdx + step) % VISUAL_FX.length) + VISUAL_FX.length) % VISUAL_FX.length]!;
-          setVisualFx(next.id);
-          showHud('VISUAL FX', next.label.toUpperCase());
-        }
-      } else if (ev.id === 'e7') {
-        const next = clamp(formant() + d * 0.1, -12, 12);
-        setFormant(Math.abs(next) < 0.15 ? 0 : next);
-        showHud('FORMANT', Math.abs(next) < 0.15 ? 'NATURAL' : `${next > 0 ? 'SMALL' : 'BIG'} ${next > 0 ? '+' : ''}${next.toFixed(1)}`);
-      } else if (ev.id === 'e8') {
-        const step = detent('e8', d);
-        if (step) cycleFraming(step);
+      const knob = KNOB_BY_ID.get(ev.id);
+      if (knob) {
+        knob.turn(d);
+        showKnob(knob);
       } else if (ev.id === 'volume') {
         const next = clamp(volume() + d * 0.03, 0, 2.0);
         setVolume(next);
@@ -1214,6 +1224,12 @@ export const videoDeck: Demo = {
     // ── Capacitive Touch Release: commit Jog / Strip seek immediately when fingers lift ──
     if (ev.type === 'touch' && !ev.touched && (ev.id === 'jog' || ev.id === 'strip')) {
       commitPendingScrub();
+      return;
+    }
+    // Touch a knob (without turning it) to see what it controls.
+    if (ev.type === 'touch' && ev.touched) {
+      const knob = KNOB_BY_ID.get(ev.id);
+      if (knob) showKnob(knob);
       return;
     }
 
@@ -1871,7 +1887,7 @@ export const videoDeck: Demo = {
         {/* Framing Mode Dropdown & Geometry */}
         <div class="card-box vdeck-section">
           <div class="vdeck-field">
-            <label class="muted">Framing Mode (Knob 8)</label>
+            <label class="muted">Framing Mode (last button under the screen)</label>
             <select
               class="vdeck-select"
               value={framingMode()}
@@ -1889,7 +1905,7 @@ export const videoDeck: Demo = {
 
           <div class="vdeck-slider">
             <div class="vdeck-slider-head">
-              <span>Zoom (K4)</span>
+              <span>Zoom</span>
               <span class="mono">{zoom().toFixed(2)}×</span>
             </div>
             <input type="range" min="1" max="3" step="0.02" value={zoom()} onInput={(e) => setZoom(Number(e.currentTarget.value))} />
@@ -1897,7 +1913,7 @@ export const videoDeck: Demo = {
 
           <div class="vdeck-slider">
             <div class="vdeck-slider-head">
-              <span>Vertical Pan (K5)</span>
+              <span>Picture up / down (K8)</span>
               <span class="mono">{Math.round(panY() * 100)}%</span>
             </div>
             <input type="range" min="0" max="1" step="0.01" value={panY()} onInput={(e) => setPanY(Number(e.currentTarget.value))} />
@@ -1922,7 +1938,7 @@ export const videoDeck: Demo = {
         {/* Knob FX Controls */}
         <div class="card-box vdeck-section">
           <div class="vdeck-slider-head">
-            <label class="muted">Audio &amp; Visual FX (Knobs 1-7)</label>
+            <label class="muted">Sound (Knobs 1-6) &amp; Visual FX (Knob 7)</label>
             <button type="button" class="vdeck-mini-btn" onClick={resetFx}>Reset FX</button>
           </div>
 
@@ -1944,7 +1960,7 @@ export const videoDeck: Demo = {
 
           <div class="vdeck-slider">
             <div class="vdeck-slider-head">
-              <span>Formant: voice size (K7)</span>
+              <span>Voice size: formant (K3)</span>
               <span class="mono">{Math.abs(formant()) < 0.15 ? 'natural' : `${formant() > 0 ? '+' : ''}${formant().toFixed(1)} st`}</span>
             </div>
             <input type="range" min="-12" max="12" step="0.5" value={formant()} onInput={(e) => setFormant(Number(e.currentTarget.value))} />
@@ -1961,7 +1977,7 @@ export const videoDeck: Demo = {
 
           <div class="vdeck-slider">
             <div class="vdeck-slider-head">
-              <span>DJ Filter (K3)</span>
+              <span>DJ Filter (K4)</span>
               <span class="mono">
                 {Math.abs(djFilter()) < 0.04 ? 'OPEN' : djFilter() < 0 ? `LP ${Math.round(-djFilter() * 100)}%` : `HP ${Math.round(djFilter() * 100)}%`}
               </span>
@@ -1971,14 +1987,22 @@ export const videoDeck: Demo = {
 
           <div class="vdeck-slider">
             <div class="vdeck-slider-head">
-              <span>Dub Echo (pad)</span>
+              <span>Dub Echo (K5)</span>
               <span class="mono">{Math.round(echoAmt() * 100)}%</span>
             </div>
             <input type="range" min="0" max="0.85" step="0.02" value={echoAmt()} onInput={(e) => setEchoAmt(Number(e.currentTarget.value))} />
           </div>
 
+          <div class="vdeck-slider">
+            <div class="vdeck-slider-head">
+              <span>Drive (K6)</span>
+              <span class="mono">{Math.round(driveAmt() * 100)}%</span>
+            </div>
+            <input type="range" min="0" max="1" step="0.02" value={driveAmt()} onInput={(e) => setDriveAmt(Number(e.currentTarget.value))} />
+          </div>
+
           <div class="vdeck-field">
-            <label class="muted">Visual FX (K6)</label>
+            <label class="muted">Visual FX (K7)</label>
             <select
               class="vdeck-select"
               value={visualFx()}
