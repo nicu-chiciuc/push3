@@ -209,6 +209,9 @@ importers:
       effect:
         specifier: ^4.1.4
         version: 4.1.4
+      sidebars-solid:
+        specifier: workspace:*
+        version: link:../../packages/sidebars-solid
       solid-js:
         specifier: ^1.9.19
         version: 1.9.19
@@ -280,6 +283,15 @@ importers:
       effect:
         specifier: ^4.1.4
         version: 4.1.4
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/sidebars-solid:
+    devDependencies:
+      solid-js:
+        specifier: ^1.9.19
+        version: 1.9.19
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
