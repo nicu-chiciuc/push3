@@ -88,7 +88,7 @@ apps/twin/src/           Browser: Vite + Solid
 - **Plain TS** handles everything that runs per frame or per MIDI message.
 - **Solid** handles the DOM. Its fine-grained signals update only what changed, and it coexists with the imperative Three.js and canvas code.
 
-## Tabs (upper display buttons 1–8, or keys 1–8)
+## Tabs (upper display buttons 1-9, or keys 1-8)
 
 | Tab | Shows off |
 |---|---|
@@ -100,6 +100,21 @@ apps/twin/src/           Browser: Vite + Solid
 | CSS Knobs | 8 knobs → 8 CSS custom properties on a live card, presets on pads, generated CSS |
 | Screen | Scrolling text, plasma, dropped images, clock on the Push display; pads mirror it |
 | Snake | A game on the pad grid (arrows, jog wheel or pads to steer) |
+| Video | A film on the Push screen beside a live effects deck: speed, pitch, formant, DJ filter, visual effects, framings, subtitles; pads trigger gags |
+
+### Video deck: what runs where
+
+Everything runs in the browser, on the deployed site too. Chrome's `<video>` shows the picture (MKV,
+MP4 or WebM with H.264, HEVC including HDR, AV1 or VP9), muted. [Mediabunny](https://mediabunny.dev/)
+(MPL-2.0) reads the same file in pieces and decodes its audio, with WASM decoders for AC-3, E-AC-3 and
+DTS (LGPL FFmpeg builds, loaded only for files that need them). [Signalsmith
+Stretch](https://signalsmith-audio.co.uk/code/stretch/) (MIT) plays that audio in step with the
+picture and does speed, pitch and formant. `patches/signalsmith-stretch@1.3.2.patch` fixes a bug in
+its buffer mode (silence once the audio is in more than one buffer).
+
+Only on the dev server (`apps/twin/video-middleware.ts`, needs ffmpeg): the native macOS file dialog,
+subtitles embedded in the file (dropped or sidecar `.srt`/`.vtt` files work everywhere), and a live
+transcode for a picture the browser cannot show.
 
 ## Fixing a control mapping
 

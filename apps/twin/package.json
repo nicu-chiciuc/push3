@@ -12,10 +12,14 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json"
   },
   "dependencies": {
+    "@mediabunny/ac3": "1.66.0",
+    "@mediabunny/dts": "1.66.0",
     "@push3/protocol": "workspace:*",
     "@push3/web": "workspace:*",
     "effect": "^4.1.4",
+    "mediabunny": "1.66.0",
     "sidebars-solid": "workspace:*",
+    "signalsmith-stretch": "1.3.2",
     "solid-js": "^1.9.19",
     "three": "^0.170.0"
   },

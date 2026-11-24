@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite';
 import solid from 'vite-plugin-solid';
 import { BRIDGE_PORT, WS_PATH } from '@push3/protocol';
+import { videoBridgePlugin } from './video-middleware.ts';
 
 export default defineConfig({
-  plugins: [solid()],
+  plugins: [solid(), videoBridgePlugin()],
   server: {
     port: 5173,
     // In bridge mode the page talks to the Node bridge over /ws; in dev, Vite forwards it.

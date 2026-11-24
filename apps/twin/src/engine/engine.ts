@@ -14,11 +14,13 @@ export interface Demo {
   readonly color: RGB;
   /** Upper-row presses go to the demo instead of switching tabs (Shift + upper still switches). */
   readonly captureUpper?: boolean;
+  /** Draw directly into the full 960×160 Push display without permanent top/bottom chrome. */
+  readonly fullBleed?: boolean;
   /** Runs for as long as the demo is active, inside its own Scope. Finalizers undo device changes. */
   activate?(app: Engine): Effect.Effect<void, never, Scope.Scope>;
   onEvent?(ev: PushEvent, app: Engine): void;
   tick?(t: number, dt: number, app: Engine): void;
-  /** Draw into the 960×116 content area of the Push screen. */
+  /** Draw into the 960×116 content area (or full 960×160 when fullBleed is true). */
   draw?(g: CanvasRenderingContext2D, app: Engine, t: number): void;
   /** Eight lower-button labels, or a status line. */
   footer?(app: Engine): string | ReadonlyArray<string>;
@@ -96,7 +98,10 @@ export class Engine {
     this.demos = demos;
     const [status, setStatus] = createSignal<Status>({ link: false, midi: false, display: false });
     const [linkKind, setLinkKind] = createSignal<LinkKind | null>(null);
-    const [demoIndex, setDemoIndex] = createSignal(Math.min(demos.length - 1, Math.max(0, store.get('demo', 0))));
+    const wantedDemo = new URLSearchParams(location.search).get('demo');
+    const wantedIdx = wantedDemo ? demos.findIndex((d) => d.id === wantedDemo) : -1;
+    const initialIdx = wantedIdx >= 0 ? wantedIdx : Math.min(demos.length - 1, Math.max(0, store.get('demo', 0)));
+    const [demoIndex, setDemoIndex] = createSignal(initialIdx);
     const [log, setLog] = createSignal<ReadonlyArray<LogEntry>>([]);
     const [sent, setSent] = createSignal(0);
     const [seenVersion, setSeenVersion] = createSignal(0);
@@ -258,8 +263,8 @@ export class Engine {
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
     this.time = now / 1000;
-    // tab LEDs first, so a demo may override them
-    this.demos.forEach((d, i) => this.leds.button(102 + i, d === this.demo ? d.color : scale(d.color, 0.22)));
+    // tab LEDs first, so a demo may override them (Push 3 has 8 physical upper buttons)
+    this.demos.slice(0, 8).forEach((d, i) => this.leds.button(102 + i, d === this.demo ? d.color : scale(d.color, 0.22)));
     this.demo.tick?.(this.time, dt, this);
     this.flushLeds();
     this.screen.draw(this, this.time);

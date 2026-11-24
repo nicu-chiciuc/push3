@@ -29,6 +29,26 @@ export class Screen {
     g.fillStyle = '#07080a';
     g.fillRect(0, 0, W, H);
 
+    if (demo.fullBleed) {
+      g.save();
+      demo.draw?.(g, app, t);
+      g.restore();
+
+      if (app.held.has('shift')) {
+        g.fillStyle = 'rgba(7,8,10,0.82)';
+        g.fillRect(0, 0, W, HEADER + 2);
+        app.demos.slice(0, 8).forEach((d, i) => {
+          const active = d === demo, x = i * 120;
+          g.fillStyle = active ? css(d.color) : '#141820';
+          g.fillRect(x + 4, 2, 112, HEADER - 4);
+          text(g, d.name, x + 60, HEADER / 2 + 1, { size: 13, color: active ? '#050505' : css(d.color, 0.9) });
+        });
+      }
+      g.restore();
+      this.version++;
+      return;
+    }
+
     g.save();
     g.beginPath();
     g.rect(CONTENT.x, CONTENT.y, CONTENT.w, CONTENT.h);
@@ -37,7 +57,7 @@ export class Screen {
     demo.draw?.(g, app, t);
     g.restore();
 
-    app.demos.forEach((d, i) => {
+    app.demos.slice(0, 8).forEach((d, i) => {
       const active = d === demo, x = i * 120;
       g.fillStyle = active ? css(d.color) : '#101216';
       g.fillRect(x + 4, 2, 112, HEADER - 4);

@@ -11,9 +11,10 @@ import { ripple } from './demos/ripple.tsx';
 import { cssKnobs } from './demos/css-knobs.tsx';
 import { studio } from './demos/studio.tsx';
 import { snake } from './demos/snake.tsx';
+import { videoDeck } from './demos/video.tsx';
 import './styles.css';
 
-const engine = new Engine([explore, test, paint, expression, ripple, cssKnobs, studio, snake]);
+const engine = new Engine([explore, test, paint, expression, ripple, cssKnobs, studio, snake, videoDeck]);
 Object.assign(window, { push3: engine }); // handy for poking at things from DevTools
 
 // Which transport: ?link=bridge|direct, else the local bridge on localhost and direct everywhere else.
