@@ -101,12 +101,12 @@ export class Twin {
     scene.environment = new THREE.PMREMGenerator(r).fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environmentIntensity = 0.55;
 
-    this.camera = new THREE.PerspectiveCamera(30, 1, 1, 120); // a far-off near plane keeps depth precise for thin decals
+    this.camera = new THREE.PerspectiveCamera(30, 1, 1, 220); // a far-off near plane keeps depth precise for thin decals
     this.controls = new OrbitControls(this.camera, r.domElement);
     this.controls.enableDamping = true;
     this.controls.maxPolarAngle = Math.PI * 0.48;
     this.controls.minDistance = 6;
-    this.controls.maxDistance = 45;
+    this.controls.maxDistance = 110; // a phone in portrait needs about 55 to fit the whole device
     this.controls.target.set(0, 0, 0.3);
     this.controls.addEventListener('start', () => { this.userMoved = true; });
 
@@ -592,10 +592,24 @@ export class Twin {
     this.controls.update();
   }
 
+  /** The closest distance at which every corner of the device (with its knobs) is inside the view. */
   #fitDistance() {
-    const a = this.camera.aspect || 1.5, tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
-    const halfW = (DEVICE.w / 2) * MM, halfD = (DEVICE.d / 2) * MM;
-    return 1.1 * Math.max(halfW / (tanV * a), (halfD * 1.12) / tanV);
+    const cam = this.camera, target = this.controls.target, dir = VIEWS[this.view];
+    cam.updateProjectionMatrix();
+    const hw = (DEVICE.w / 2) * MM, hd = (DEVICE.d / 2) * MM, top = 16 * MM, bottom = -DEVICE.h * MM;
+    const corners: Array<THREE.Vector3> = [];
+    for (const x of [-hw, hw]) for (const y of [bottom, top]) for (const z of [-hd, hd]) corners.push(new THREE.Vector3(x, y, z));
+    // Leave room for the hint above and the toolbar below the model.
+    const marginX = 0.94, marginY = 0.84;
+    const fits = (d: number) => {
+      cam.position.copy(target).addScaledVector(dir, d);
+      cam.lookAt(target);
+      cam.updateMatrixWorld(true);
+      return corners.every((c) => { const p = c.clone().project(cam); return Math.abs(p.x) <= marginX && Math.abs(p.y) <= marginY && p.z < 1; });
+    };
+    let lo = 1, hi = 120;
+    for (let i = 0; i < 28; i++) { const mid = (lo + hi) / 2; if (fits(mid)) hi = mid; else lo = mid; }
+    return hi;
   }
 
   resize() {
