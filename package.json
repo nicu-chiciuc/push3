@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Ableton Push 3 beyond Ableton: reusable packages (protocol, web, node) and the 3D twin app",
   "author": "Nicu Chiciuc",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.14.0",

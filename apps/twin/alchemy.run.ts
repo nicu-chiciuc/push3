@@ -8,8 +8,9 @@
 // pnpm build`), and the Worker serves it as assets. The page talks to the Push from the browser
 // (Web MIDI for pads and LEDs, WebUSB for the screen), so the Worker runs no code of its own.
 //
-// The stack name is the repository. It is a literal, unchanged since the stack moved into
-// apps/twin, so the state still finds the deployed Worker. The state is on the branch
+// The stack name is the repository's first name (it is now nicu-chiciuc/push3). It is a literal,
+// unchanged since the stack moved into apps/twin and since the rename, so the state still finds the
+// deployed Worker; so is the Worker's name. The state is on the branch
 // `alchemy-state-store` of this repository (@samebase/alchemy-kit/github-state): the run writes it
 // with GITHUB_TOKEN and seals each secret with ALCHEMY_GITHUB_STATE_KEY. The Worker needs
 // CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.

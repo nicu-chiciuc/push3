@@ -2,7 +2,7 @@
   "name": "@push3/node",
   "version": "0.1.0",
   "description": "Own an Ableton Push 3 from Node and share it with local web pages (the bridge)",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {

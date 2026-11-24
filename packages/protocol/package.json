@@ -2,7 +2,7 @@
   "name": "@push3/protocol",
   "version": "0.1.0",
   "description": "Ableton Push 3 as data: MIDI/SysEx, display frames, LED palette, event parser, controller",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "sideEffects": false,

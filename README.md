@@ -13,7 +13,7 @@ A 3D digital twin and demo suite for a USB-tethered **Ableton Push 3** (controll
 | [`packages/sidebars-solid`](packages/sidebars-solid) | `sidebars-solid` | A Solid port of [`@samebase/sidebars`](https://github.com/samebase/samebase/tree/main/packages/sidebars): resizable side panes on desktop, a swipe carousel on phones. MIT. |
 | [`apps/twin`](apps/twin) | `push3-twin` | The 3D twin and demo tabs. Deployed to [push.tsx.md](https://push.tsx.md). |
 
-The packages export their TypeScript source and are not on npm yet. Another app in this workspace, or a Vite app linked to it (`pnpm add link:../push3-twin/packages/web`), can use them as they are. Publishing them to npm needs a license and a build step first.
+The packages export their TypeScript source and are not on npm yet. Another app in this workspace, or a Vite app linked to it (`pnpm add link:../push3/packages/web`), can use them as they are. Publishing them to npm needs a build step first.
 
 ## Two ways to connect
 
@@ -139,3 +139,7 @@ one when upgrading the package, and drop it once the package fixes the bug.
 - Official: Ableton's [Push 2 MIDI & Display Interface Manual](https://github.com/Ableton/push-interface). The display format, palette, LED animations and touch strip all work unchanged on Push 3.
 - Community (Push 3 extras such as MPE mode `0x1E 02` and the per-pad MPE options): [danielknng/push3-protocol-docs](https://github.com/danielknng/push3-protocol-docs) and [DrivenByMoss](https://github.com/git-moss/DrivenByMoss).
 - Only documented commands are sent. Ableton warns that undocumented SysEx can wipe factory calibration.
+
+## License
+
+[MIT](LICENSE), © 2026 Nicușor Chiciuc. [`packages/chimera`](packages/chimera) holds CHIMERA, © Jameson Hodge, under its own MIT license ([LICENSE](packages/chimera/LICENSE)). [`packages/sidebars-solid`](packages/sidebars-solid) keeps its own [LICENSE.md](packages/sidebars-solid/LICENSE.md), also MIT. Ableton and Push are trademarks of Ableton AG; this project is not made or endorsed by Ableton.

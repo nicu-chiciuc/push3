@@ -208,7 +208,7 @@ const TopBar: Component<{
 
               <a class="repo-link" href={REPO_URL} target="_blank" rel="noopener" title="Source code on GitHub">
                 <GitHubIcon />
-                <span><span class="repo-owner">nicu-chiciuc/</span>push3-twin</span>
+                <span><span class="repo-owner">nicu-chiciuc/</span>push3</span>
               </a>
 
               <Show when={!presentation().leftDesktopOpen}>
@@ -608,7 +608,7 @@ const BrandMark = () => (
   </svg>
 );
 
-const REPO_URL = 'https://github.com/nicu-chiciuc/push3-twin';
+const REPO_URL = 'https://github.com/nicu-chiciuc/push3';
 
 /** The GitHub mark (Octicons `mark-github`, MIT). */
 const GitHubIcon = () => (

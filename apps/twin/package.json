@@ -2,7 +2,7 @@
   "name": "push3-twin",
   "version": "0.1.0",
   "description": "3D digital twin + demo suite for a USB-tethered Ableton Push 3",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {

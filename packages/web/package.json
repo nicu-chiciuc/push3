@@ -2,7 +2,7 @@
   "name": "@push3/web",
   "version": "0.1.0",
   "description": "Drive an Ableton Push 3 from a web page: Web MIDI + WebUSB, or the local bridge",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "sideEffects": false,
