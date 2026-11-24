@@ -1,53 +1,60 @@
-// Our glue around the upstream CHIMERA modules: one voice played by hand (we send `setSource` and
-// `gate` ourselves, as CHIMERA's store does for its keyboard; pressure and brightness glide in our
-// worklet, see worklet.ts) and a 3D head drawn off screen. The
-// per-frame head code follows upstream/src/ui/components/AnatomyView3D.tsx (not copied: it is
-// React), without the orbit controls, the readouts and the petting.
+// Our glue around the upstream CHIMERA modules: one voice played by hand (we send `setSource`,
+// `setArtic` and `gate` ourselves, as CHIMERA's store does for its keyboard and its head's
+// handles; pressure and brightness glide in our worklet, see worklet.ts) and CHIMERA's 2D head.
+// The head's per-frame code follows upstream/src/ui/components/AnatomyView.tsx (not copied: it is
+// React), without the dragging and the readouts.
 // Import this module only after initChimera() has resolved (see index.ts).
-import * as THREE from 'three';
 import type { Chimera, Head, Readout, VoiceSettings } from './api.ts';
-import { MOUTH, type Body } from './settings.ts';
+import { ARTIC_KEYS, MOUTH, type ArticKey, type Articulation, type BodyMix, type HandleId } from './settings.ts';
 import { VoiceEngine } from './engine.ts';
-import { DEFAULT_SOURCE, NEUTRAL, restTip, type HumanArtic } from '../upstream/src/wasm/engine.ts';
+import { ARTIC_SPECS, DEFAULT_SOURCE, NEUTRAL, restTip, type HumanArtic } from '../upstream/src/wasm/engine.ts';
 import { VoiceModel } from '../upstream/src/ui/analysis.ts';
-import { PRESETS, defaultF0, sameBody } from '../upstream/src/ui/body.ts';
-import { Anatomy3D } from '../upstream/src/ui/render/anatomy3d.ts';
+import { PRESETS, bodyKey, defaultF0, sameBody } from '../upstream/src/ui/body.ts';
+import { AnatomyRenderer, type ViewFlags } from '../upstream/src/ui/render/anatomy.ts';
+import { VIEW } from '../upstream/src/ui/render/profile.ts';
 import { Glow } from '../upstream/src/ui/render/vector.ts';
-import type { ViewFlags } from '../upstream/src/ui/render/anatomy.ts';
 import type { TelemetryMessage } from '../upstream/src/worklet/protocol.ts';
 
 /** The calibrated vowel behind each mouth position (IPA): "A" is the open back vowel of "hod". */
 const MOUTH_IPA: Record<(typeof MOUTH)[number], string> = { U: 'u', O: 'o', A: 'ɑ', E: 'e', I: 'i' };
-const VIEW: ViewFlags = { pressure: true, particles: true, grid: false, calipers: false };
+const VIEW_FLAGS: ViewFlags = { pressure: true, particles: true, grid: false, calipers: true };
+/** What we frame (body cm): CHIMERA's view heights (the larynx to above the eyes), and the whole
+ *  head across (its view is narrower: it cuts the back of the skull and keeps room in front of the
+ *  face for readouts). Measured on the adult male profile, the largest: x -8.8 .. 9.3 cm. */
+const BOX = { x0: -9.0, x1: 9.4, y0: VIEW.y0, y1: VIEW.y1 };
 const SOURCE_KEYS = ['f0', 'pressure', 'tension', 'brightness', 'breathiness', 'roughness', 'fry', 'vibratoDepth', 'glide'] as const;
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
 export function createChimera(): Chimera {
   const engine = new VoiceEngine();
-  let body: Body = 'male';
-  const source: VoiceSettings = { ...pick(DEFAULT_SOURCE), f0: defaultF0(PRESETS[body]) };
+  /** the body the voice has, and the one the head shows (ahead of it while a size is chosen) */
+  let body: BodyMix = PRESETS.male, shown: BodyMix = PRESETS.male;
+  const source: VoiceSettings = { ...pick(DEFAULT_SOURCE), f0: defaultF0(body) };
   let gateLevel = 0;
-  let mouth = MOUTH.indexOf('A');
-  /** the articulation we asked for (the head shows it while there is no telemetry) */
+  /** the articulation we asked for (tip free: it rests on the tongue body) */
   let artic: HumanArtic = withTip({ ...NEUTRAL });
   const runningFns = new Set<(running: boolean) => void>();
 
-  // One acoustic model per body and sample rate (the head's geometry and the vowels), as upstream useModel.
-  let model: VoiceModel | null = null, modelRate = 0;
-  const modelNow = (): VoiceModel => {
-    const rate = engine.ctx ? engine.sampleRate : 48000;
-    if (!model || !sameBody(model.body, PRESETS[body]) || modelRate !== rate) {
-      model?.dispose();
-      model = new VoiceModel(PRESETS[body], rate);
-      modelRate = rate;
+  // Acoustic models (the head's geometry, the vowels) per body and sample rate, a few kept, as upstream useModel.
+  const models = new Map<string, VoiceModel>();
+  const modelFor = (b: BodyMix): VoiceModel => {
+    const key = `${bodyKey(b)}@${engine.ctx ? engine.sampleRate : 48000}`;
+    let m = models.get(key);
+    if (m) models.delete(key);
+    else m = new VoiceModel(b, engine.ctx ? engine.sampleRate : 48000);
+    models.set(key, m);
+    if (models.size > 4) {
+      const [oldest, old] = models.entries().next().value!;
+      models.delete(oldest);
+      old.dispose();
     }
-    return model;
+    return m;
   };
 
   /** The articulation for a mouth position: the two nearest calibrated vowels, blended. */
   const mouthArtic = (pos: number): Partial<HumanArtic> => {
-    const m = modelNow();
+    const m = modelFor(body);
     const at = (i: number) => m.vowels.find((v) => v.ipa === MOUTH_IPA[MOUTH[i]!])?.artic ?? {};
     const p = clamp(pos, 0, MOUTH.length - 1), i = Math.min(MOUTH.length - 2, Math.floor(p)), u = p - i;
     const a = at(i), b = at(i + 1), out: Partial<HumanArtic> = {};
@@ -57,27 +64,34 @@ export function createChimera(): Chimera {
     }
     return out;
   };
+  const moveTo = (a: Partial<HumanArtic>) => {
+    artic = withTip({ ...artic, ...a });
+    engine.setArtic(a, true);
+  };
 
   /** Send the voice again: messages sent before the worklet exists are lost. */
   const resync = () => {
     const { pressure, brightness, ...rest } = source;
     engine.setSource(rest);
     engine.setExpression({ pressure, brightness });
-    engine.setArtic(mouthArtic(mouth), true);
+    engine.setArtic(artic, true);
     engine.gate(gateLevel);
   };
   // The worklet says "ready" when it starts and again after each body change, so
   // the body is sent only on the first one: sending it on each would never end.
   let booted = false;
   engine.onReady(() => {
-    if (!booted) engine.setBody(PRESETS[body]);
+    if (!booted) engine.setBody(body);
     booted = true;
     resync();
   });
 
+  const articRange = Object.fromEntries(ARTIC_KEYS.map((k) => [k, { min: ARTIC_SPECS[k].min, max: ARTIC_SPECS[k].max }])) as Record<ArticKey, { min: number; max: number }>;
+
   const voice: Chimera = {
-    get defaults() { return { ...pick(DEFAULT_SOURCE), f0: defaultF0(PRESETS[body]) }; },
-    get body() { return body; },
+    get defaults() { return { ...pick(DEFAULT_SOURCE), f0: defaultF0(body) }; },
+    articRange,
+    get body() { return shown; },
     get running() { return engine.running; },
     start() {
       const first = !engine.ctx;
@@ -106,17 +120,18 @@ export function createChimera(): Chimera {
       gateLevel = level;
       engine.gate(level);
     },
-    setMouth(position) {
-      mouth = clamp(position, 0, MOUTH.length - 1);
-      const a = mouthArtic(mouth);
-      artic = withTip({ ...artic, ...a });
-      engine.setArtic(a, true);
+    articulation: () => Object.fromEntries(ARTIC_KEYS.map((k) => [k, artic[k]])) as Articulation,
+    setArtic(values) {
+      const a: Partial<HumanArtic> = {};
+      for (const [k, v] of Object.entries(values) as [ArticKey, number][]) a[k] = clamp(v, articRange[k].min, articRange[k].max);
+      moveTo(a);
     },
-    setBody(b) {
-      if (b === body) return;
+    setMouth: (position) => moveTo(mouthArtic(clamp(position, 0, MOUTH.length - 1))),
+    setBody(b, rebuild) {
+      shown = b;
+      if (!rebuild || sameBody(b, body)) return;
       body = b;
-      engine.setBody(PRESETS[b]);
-      voice.setMouth(mouth); // the vowels are calibrated per body
+      engine.setBody(b);
     },
     readout(): Readout | null {
       const t = engine.latest && engine.running ? engine.latest : null;
@@ -139,7 +154,12 @@ export function createChimera(): Chimera {
         return true;
       };
     })(),
-    createHead: (size, pixelRatio, options) => new HeadView(size, pixelRatio, options?.zoom ?? 1, modelNow, () => body, () => artic, () => (engine.running ? engine.latest : null)),
+    createHead: (width, height, pixelRatio, options) =>
+      new Head2D(width, height, pixelRatio, options?.align ?? 'center', () => modelFor(shown), () => {
+        // the voice's own movements, while it sings the body the head shows
+        const t = engine.running ? engine.latest : null;
+        return t && sameBody(t.body, shown) ? t : null;
+      }, () => artic),
   };
   return voice;
 }
@@ -156,66 +176,48 @@ function withTip(a: HumanArtic): HumanArtic {
   return { ...a, ttX: tip.x, ttY: tip.y };
 }
 
-class HeadView implements Head {
+/** CHIMERA's midsagittal head. Its renderer leaves room for readouts beside the head (and puts them
+ *  above and below it on a narrow canvas): we lay it out wide, without readouts, and move the head
+ *  into our box, as large as the canvas allows. */
+class Head2D implements Head {
   readonly canvas = document.createElement('canvas');
   private readonly ctx: CanvasRenderingContext2D;
-  private readonly glCanvas = document.createElement('canvas');
-  private readonly gl: THREE.WebGLRenderer;
-  private readonly r = new Anatomy3D();
+  private readonly r = new AnatomyRenderer();
   private readonly glow = new Glow();
-  private posed: VoiceModel | null = null;
   private readonly ratio: number;
-  private readonly zoom: number;
+  private readonly dx: number;
+  private readonly dy: number;
   private readonly model: () => VoiceModel;
-  private readonly body: () => Body;
-  private readonly artic: () => HumanArtic;
   private readonly tele: () => TelemetryMessage | null;
+  private readonly artic: () => HumanArtic;
 
-  constructor(size: number, ratio: number, zoom: number, model: () => VoiceModel, body: () => Body, artic: () => HumanArtic, tele: () => TelemetryMessage | null) {
+  constructor(width: number, height: number, ratio: number, align: 'left' | 'center', model: () => VoiceModel, tele: () => TelemetryMessage | null, artic: () => HumanArtic) {
     this.ratio = ratio;
-    this.zoom = zoom;
     this.model = model;
-    this.body = body;
-    this.artic = artic;
     this.tele = tele;
-    this.canvas.width = this.canvas.height = Math.round(size * ratio);
+    this.artic = artic;
+    this.canvas.width = Math.round(width * ratio);
+    this.canvas.height = Math.round(height * ratio);
     this.ctx = this.canvas.getContext('2d')!;
-    this.gl = new THREE.WebGLRenderer({ canvas: this.glCanvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
-    // the palette's sRGB values go straight through, as on CHIMERA's 2D screens
-    this.gl.outputColorSpace = THREE.LinearSRGBColorSpace;
-    this.gl.setClearColor(0x000000, 1);
-    this.gl.setPixelRatio(ratio);
-    this.gl.setSize(size, size, false);
-    this.r.centred = true;
-    this.r.resize(size, size);
+    // the renderer fits its view's height between 8 px pads (wide enough, it never fits the width)
+    const scale = Math.min((height - 4) / (BOX.y1 - BOX.y0), (width - 4) / (BOX.x1 - BOX.x0));
+    this.r.resize(Math.max(560, 2 * width + 600), scale * (VIEW.y1 - VIEW.y0) + 16);
+    const k = this.r.pxPerCm, boxW = (BOX.x1 - BOX.x0) * k;
+    this.dx = (align === 'left' ? 2 : (width - boxW) / 2) - this.r.X({ x: BOX.x0, y: 0 });
+    this.dy = (height - (BOX.y1 - BOX.y0) * k) / 2 - this.r.Y({ x: 0, y: BOX.y1 });
   }
 
-  frame(dt: number): void {
-    const m = this.model(), r = this.r, cam = r.camera;
-    if (this.posed !== m) {
-      // the turned three-quarter view, a little closer than CHIMERA's (no readouts around it here)
-      const p = r.poses(m);
-      cam.position.copy(p.target).add(p.home.sub(p.target).multiplyScalar(1 / this.zoom));
-      cam.lookAt(p.target);
-      cam.updateMatrixWorld();
-      this.posed = m;
-    }
-    const tele = this.tele(), latest = tele && sameBody(tele.body, PRESETS[this.body()]) ? tele : null;
-    const a = latest ? VoiceModel.articFromArray(latest.t.artic) : this.artic();
-    r.face.update(latest, Math.min(0.5, dt));
-    r.update(m, m.frame(a), a, latest, VIEW, Math.min(0.05, dt));
-    this.gl.render(r.scene, cam);
-    const g = this.ctx, px = this.canvas.width;
+  frame(dt: number, ring: HandleId | null = null): void {
+    const m = this.model(), tele = this.tele();
+    const a = tele ? VoiceModel.articFromArray(tele.t.artic) : this.artic();
+    this.r.face.update(tele, Math.min(0.5, dt));
+    const g = this.ctx;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.globalCompositeOperation = 'source-over';
-    g.drawImage(this.glCanvas, 0, 0, px, px);
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    g.setTransform(this.ratio, 0, 0, this.ratio, this.dx * this.ratio, this.dy * this.ratio);
+    this.r.draw(g, m, m.frame(a), a, tele, VIEW_FLAGS, { hover: ring, drag: null, dt: Math.min(0.05, dt), formants: [], slots: [], info: [] });
     this.glow.apply(this.canvas, g, this.ratio);
-  }
-
-  dispose(): void {
-    this.r.dispose();
-    this.gl.dispose();
-    // browsers allow few live WebGL contexts: give this one back now, not at garbage collection
-    this.gl.forceContextLoss();
   }
 }

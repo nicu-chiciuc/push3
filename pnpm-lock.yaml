@@ -267,12 +267,6 @@ importers:
 
   packages/chimera:
     devDependencies:
-      '@types/three':
-        specifier: ^0.170.0
-        version: 0.170.0
-      three:
-        specifier: ^0.170.0
-        version: 0.170.0
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

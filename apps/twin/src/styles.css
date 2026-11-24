@@ -748,12 +748,12 @@ a.icon-btn:focus-visible {
   margin: 10px 0;
 }
 
-/* Chimera: the singing head, a copy of the picture on the Push screen */
+/* Chimera: the singing head (CHIMERA's 2D view, taller than wide) */
 .chimera-head {
   display: block;
   width: 100%;
-  max-width: 360px;
-  aspect-ratio: 1;
+  max-width: 320px;
+  aspect-ratio: 3 / 4;
   background: #000;
   border: 1px solid var(--line);
   border-radius: 10px;

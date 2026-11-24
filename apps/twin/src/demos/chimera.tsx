@@ -1,12 +1,14 @@
 // Chimera: CHIMERA, a physical model of the human voice by Jameson Hodge (MIT,
-// github.com/jamesondh/chimera-vocal-synth), played from the Push. Its head sings on the Push
-// screen. Pads (MPE, in fourths) play one voice, last note wins: roll bends the pitch, pressure is
-// the breath, slide the brightness. Knobs shape the voice, the touch strip moves the mouth through
-// U O A E I, and lower buttons 1-5 jump to a vowel.
-import { createSignal, For, onCleanup, Show } from 'solid-js';
+// github.com/jamesondh/chimera-vocal-synth), played from the Push. Its 2D head (a cut through the
+// middle of the head, as on chimera.audio) sings on the Push screen. Pads (MPE, in fourths) play
+// one voice, last note wins: roll bends the pitch, pressure is the breath, slide the brightness.
+// Knobs move the throat (jaw, tongue, lips, soft palate, larynx, body size); with Shift held they
+// shape the voice. The touch strip moves the mouth through U O A E I, lower buttons 3-7 jump to a
+// vowel.
+import { createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
 import { Effect } from 'effect';
 import { css, hsv, type RGB } from '@push3/protocol';
-import { BODIES, loadChimera, MOUTH, type Body, type Chimera, type Head, type VoiceSettings, type Vowel } from '@push3/chimera';
+import { loadChimera, MOUTH, type Articulation, type ArticKey, type BodyMix, type Chimera, type HandleId, type Head, type VoiceSettings, type Vowel } from '@push3/chimera';
 import { MONO, text } from '../engine/screen.ts';
 import type { Demo, Engine } from '../engine/engine.ts';
 
@@ -16,11 +18,10 @@ const inScale = (p: number) => [0, 2, 4, 5, 7, 9, 11].includes(p % 12);
 const midiHz = (m: number) => 440 * 2 ** ((m - 69) / 12);
 const hzMidi = (f: number) => 69 + 12 * Math.log2(f / 440);
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
-/** The lowest pad (C) per body: a man's voice sits an octave below a woman's or a child's. */
-const ROOT: Record<Body, number> = { male: 36, female: 48, child: 48 };
-const BODY_LABEL: Record<Body, string> = { male: 'Male', female: 'Female', child: 'Child' };
-/** Lower buttons 1-5, in the order people say them; the strip runs U O A E I (see MOUTH). */
+/** Lower buttons 3-7, in the order people say them; the strip runs U O A E I (see MOUTH). Buttons
+ *  1 and 2 sit under the head and stay free. */
 const VOWEL_BUTTONS: ReadonlyArray<Vowel> = ['A', 'E', 'I', 'O', 'U'];
+const FIRST_VOWEL_BUTTON = 3;
 const SPECTRUM_LO = 60, SPECTRUM_HI = 5000;
 // The finger's expression, as CHIMERA's plugin maps MPE (crates/chimera-plugin/src/core.rs):
 /** pressure adds up to this share of the breath knob (the knob is the breath at a light touch) */
@@ -29,40 +30,36 @@ const PRESSURE_DEPTH = 0.75;
 const SLIDE_DEPTH = 1;
 /** a slide this soon after its note starts (s) is where the finger landed */
 const SLIDE_LANDING = 0.05;
+/** The size knob rebuilds the voice (a new airway) once it rests this long (ms), or on release. */
+const SIZE_SETTLE = 400;
 
-// ── the 8 knobs, left to right ──
-type Key = Exclude<keyof VoiceSettings, 'f0'>;
+// ── the knobs: the throat, or (Shift held) the voice ──
 interface Knob {
   readonly id: string;
-  readonly key: Key;
   readonly label: string;
   readonly short: string;
   readonly color: number;
+  /** the handle on the head this knob moves */
+  readonly ring?: HandleId;
   readonly min: number;
   readonly max: number;
   /** change per encoder tick: added, or (log) multiplied */
   readonly step: number;
   readonly log?: boolean;
+  readonly get: () => number | undefined;
+  readonly set: (v: number) => void;
   readonly format: (v: number) => string;
+  /** a shorter value for the cells on the screen */
+  readonly brief?: (v: number) => string;
 }
 const pct = (v: number) => `${Math.round(v * 100)}%`;
-const KNOBS: ReadonlyArray<Knob> = [
-  { id: 'e1', key: 'pressure', label: 'BREATH PRESSURE', short: 'BREATH', color: 0x38bdf8, min: 2, max: 22, step: 0.15, format: (v) => `${v.toFixed(1)} cmH₂O` },
-  { id: 'e2', key: 'tension', label: 'PRESSED', short: 'PRESS', color: 0xf472b6, min: 0, max: 1, step: 0.01, format: pct },
-  { id: 'e3', key: 'brightness', label: 'BRIGHTNESS', short: 'BRIGHT', color: 0xfacc15, min: 0, max: 1, step: 0.01, format: pct },
-  { id: 'e4', key: 'breathiness', label: 'BREATHINESS', short: 'AIRY', color: 0x7de6ff, min: 0, max: 1, step: 0.01, format: pct },
-  { id: 'e5', key: 'roughness', label: 'ROUGHNESS', short: 'ROUGH', color: 0xff551e, min: 0, max: 1, step: 0.01, format: pct },
-  { id: 'e6', key: 'fry', label: 'VOCAL FRY', short: 'FRY', color: 0xc084fc, min: 0, max: 1, step: 0.01, format: pct },
-  { id: 'e7', key: 'vibratoDepth', label: 'VIBRATO DEPTH', short: 'VIBRATO', color: 0x34d399, min: 0, max: 120, step: 1, format: (v) => `${Math.round(v)} cents` },
-  { id: 'e8', key: 'glide', label: 'GLIDE', short: 'GLIDE', color: 0x60a5fa, min: 0.005, max: 0.6, step: 1.04, log: true, format: (v) => `${Math.round(v * 1000)} ms` },
-];
-const KNOB_BY_ID = new Map(KNOBS.map((k) => [k.id, k]));
-const knobPos = (k: Knob, v: number) => (k.log ? Math.log(v / k.min) / Math.log(k.max / k.min) : (v - k.min) / (k.max - k.min));
-const rgbOf = (c: number): RGB => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
+const cm = (v: number) => `${v.toFixed(2)} cm`;
+const signedCm = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)} cm`;
 
 // ── state ──
 let voice: Chimera | null = null;
 let head: Head | null = null;
+let panelHead: Head | null = null;
 let current: Engine | null = null;
 /** The page's copy of the head (the Panel's canvas), drawn each frame while the panel is open. */
 let panelCanvas: HTMLCanvasElement | null = null;
@@ -71,13 +68,18 @@ const [status, setStatus] = createSignal<'loading' | 'ready' | 'failed'>('loadin
 const [soundOn, setSoundOn] = createSignal(true);
 /** The browser lets audio start only after a click or key press on the page; until then this is false. */
 const [audioRunning, setAudioRunning] = createSignal(false);
-/** The knobs' values (the base the fingers play around). */
-const [settings, setSettings] = createSignal<Record<Key, number> | null>(null);
-const [mouth, setMouthSignal] = createSignal(MOUTH.indexOf('A'));
-const [body, setBodySignal] = createSignal<Body>('male');
+/** The voice knobs' values (breath and brightness are the base the fingers play around). */
+type SourceKey = Exclude<keyof VoiceSettings, 'f0'>;
+const [settings, setSettings] = createSignal<Record<SourceKey, number> | null>(null);
+/** Where the articulators are going. */
+const [artic, setArticSignal] = createSignal<Articulation | null>(null);
+/** The mouth on the U O A E I line, or null once a knob has moved an articulator away from it. */
+const [mouth, setMouthSignal] = createSignal<number | null>(MOUTH.indexOf('A'));
+/** Body size: 0 adult male, 0.5 adult female, 1 child (blends between). */
+const [size, setSizeSignal] = createSignal(0);
 const [bendRange, setBendRange] = createSignal(2);
 const s = {
-  root: ROOT.male,
+  root: 36,
   /** pad notes held, in press order: the last one sings */
   held: [] as number[],
   /** per held pad: when it went down (s) and the slide it landed on */
@@ -86,42 +88,118 @@ const s = {
   pitch: NaN,
   breath: 0,
   bright: 0,
-  spectrum: new Float32Array(136),
+  spectrum: new Float32Array(100),
   hasSpectrum: false,
   hud: { label: '', value: '', until: 0 },
+  /** the knob turned last, and when (s): its handle stays ringed a moment */
+  lastKnob: null as Knob | null,
+  lastAt: 0,
+  sizeTimer: 0 as ReturnType<typeof setTimeout> | 0,
 };
+
+const bodyOf = (z: number): BodyMix => ({ female: Math.min(1, 2 * z), child: Math.max(0, 2 * z - 1) });
+const sizeName = (z: number) => (z < 0.01 ? 'Male' : Math.abs(z - 0.5) < 0.01 ? 'Female' : z > 0.99 ? 'Child' : z < 0.5 ? `${Math.round(z * 200)}% female` : `${Math.round((z - 0.5) * 200)}% child`);
+
+function setSize(z: number, rebuild: boolean) {
+  z = clamp(Math.round(z * 100) / 100, 0, 1);
+  setSizeSignal(z);
+  if (s.sizeTimer) clearTimeout(s.sizeTimer);
+  s.sizeTimer = 0;
+  if (rebuild) z = Math.round(z * 20) / 20; // CHIMERA's body pad: 5 % steps
+  voice?.setBody(bodyOf(z), rebuild);
+  if (!rebuild) s.sizeTimer = setTimeout(() => setSize(size(), true), SIZE_SETTLE);
+  else setSizeSignal(z);
+}
+
+const range = (k: ArticKey) => voice?.articRange[k] ?? { min: 0, max: 1 };
+function moveArtic(k: ArticKey, v: number) {
+  if (!voice) return;
+  voice.setArtic({ [k]: v });
+  setArticSignal(voice.articulation());
+  setMouthSignal(null);
+}
+const throatKnob = (id: string, key: ArticKey, label: string, short: string, color: number, ring: HandleId, format: (v: number) => string, brief?: (v: number) => string): Knob => ({
+  id, label, short, color, ring, format, brief,
+  get min() { return range(key).min; },
+  get max() { return range(key).max; },
+  get step() { return (range(key).max - range(key).min) / 120; },
+  get: () => artic()?.[key],
+  set: (v) => moveArtic(key, v),
+});
+/** where a value sits in its range, as a share (the tongue's own units mean little to a player) */
+const share = (key: ArticKey) => (v: number) => `${Math.round(((v - range(key).min) / (range(key).max - range(key).min)) * 100)}%`;
+
+const THROAT: ReadonlyArray<Knob> = [
+  throatKnob('e1', 'jaw', 'JAW OPEN', 'JAW', 0xf87171, 'jaw', cm, (v) => v.toFixed(1)),
+  throatKnob('e2', 'tbX', 'TONGUE BACK / FRONT', 'TNG FRONT', 0x4ade80, 'tongue', share('tbX')),
+  throatKnob('e3', 'tbY', 'TONGUE LOW / HIGH', 'TNG HIGH', 0x86efac, 'tongue', share('tbY')),
+  throatKnob('e4', 'lipAp', 'LIPS OPEN', 'LIPS', 0xf472b6, 'lips', (v) => (v <= 0 ? 'CLOSED' : cm(v)), (v) => (v <= 0 ? 'SHUT' : v.toFixed(1))),
+  throatKnob('e5', 'lipProt', 'LIPS FORWARD', 'LIPS FWD', 0xf9a8d4, 'lips', cm, (v) => v.toFixed(1)),
+  throatKnob('e6', 'velum', 'SOFT PALATE (NOSE)', 'NOSE', 0xe5e7eb, 'velum', (v) => (v <= 0 ? 'SHUT' : `${v.toFixed(2)} cm²`), (v) => (v <= 0 ? 'SHUT' : v.toFixed(2))),
+  throatKnob('e7', 'larynx', 'LARYNX DOWN / UP', 'LARYNX', 0x60a5fa, 'larynx', signedCm, (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}`),
+  {
+    id: 'e8', label: 'BODY SIZE', short: 'SIZE', color: 0xfbbf24, min: 0, max: 1, step: 0.01,
+    get: () => size(), set: (v) => setSize(v, false), format: sizeName,
+    brief: (z) => (z < 0.01 ? 'MALE' : Math.abs(z - 0.5) < 0.01 ? 'FEM' : z > 0.99 ? 'CHILD' : z < 0.5 ? `F${Math.round(z * 200)}` : `C${Math.round((z - 0.5) * 200)}`),
+  },
+];
+
+const sourceKnob = (id: string, key: SourceKey, label: string, short: string, color: number, min: number, max: number, step: number, format: (v: number) => string, log = false, brief?: (v: number) => string): Knob => ({
+  id, label, short, color, min, max, step, log, format, brief,
+  get: () => settings()?.[key],
+  set: (v) => {
+    const cur = settings();
+    if (!cur) return;
+    setSettings({ ...cur, [key]: clamp(v, min, max) });
+    // breath and brightness are what the finger plays around: apply() mixes them in
+    if (key === 'pressure' || key === 'brightness') apply(current);
+    else voice?.setSource({ [key]: clamp(v, min, max) });
+  },
+});
+const VOICE: ReadonlyArray<Knob> = [
+  sourceKnob('e1', 'pressure', 'BREATH PRESSURE', 'BREATH', 0x38bdf8, 2, 22, 0.15, (v) => `${v.toFixed(1)} cmH₂O`, false, (v) => v.toFixed(1)),
+  sourceKnob('e2', 'tension', 'PRESSED', 'PRESS', 0xf472b6, 0, 1, 0.01, pct),
+  sourceKnob('e3', 'brightness', 'BRIGHTNESS', 'BRIGHT', 0xfacc15, 0, 1, 0.01, pct),
+  sourceKnob('e4', 'breathiness', 'BREATHINESS', 'AIRY', 0x7de6ff, 0, 1, 0.01, pct),
+  sourceKnob('e5', 'roughness', 'ROUGHNESS', 'ROUGH', 0xff551e, 0, 1, 0.01, pct),
+  sourceKnob('e6', 'fry', 'VOCAL FRY', 'FRY', 0xc084fc, 0, 1, 0.01, pct),
+  sourceKnob('e7', 'vibratoDepth', 'VIBRATO DEPTH', 'VIBRATO', 0x34d399, 0, 120, 1, (v) => `${Math.round(v)} cents`, false, (v) => `${Math.round(v)}¢`),
+  sourceKnob('e8', 'glide', 'GLIDE', 'GLIDE', 0x60a5fa, 0.005, 0.6, 1.04, (v) => `${Math.round(v * 1000)} ms`, true, (v) => `${Math.round(v * 1000)}ms`),
+];
+
+const voicePage = (app: Engine | null) => !!app?.held.has('shift');
+const page = (app: Engine | null) => (voicePage(app) ? VOICE : THROAT);
+const knobPos = (k: Knob, v: number) => (k.log ? Math.log(v / k.min) / Math.log(k.max / k.min) : (v - k.min) / (k.max - k.min));
+const rgbOf = (c: number): RGB => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
+const markKnobs = (app: Engine) => { for (const k of page(app)) app.twin.markEncoder(k.id, k.color); };
 
 const pitchOf = (rowFromTop: number, col: number) => s.root + col + (7 - rowFromTop) * 5; // rows in fourths, like Push
 const padPitch = (note: number) => { const i = note - 36; return pitchOf(7 - Math.floor(i / 8), i % 8); };
 
 const showHud = (label: string, value: string) => { s.hud = { label, value, until: performance.now() / 1000 + 1.9 }; };
-const showKnob = (k: Knob) => { const v = settings()?.[k.key]; if (v !== undefined) showHud(k.label, k.format(v)); };
-
-function setKnob(k: Knob, v: number) {
-  const cur = settings();
-  if (!cur) return;
-  const next = clamp(v, k.min, k.max);
-  setSettings({ ...cur, [k.key]: next });
-  // breath and brightness are what the finger plays around: apply() mixes them in
-  if (k.key === 'pressure' || k.key === 'brightness') apply(current);
-  else voice?.setSource({ [k.key]: next });
-}
+const showKnob = (k: Knob) => { const v = k.get(); if (v !== undefined) showHud(k.label, k.format(v)); };
 const turnKnob = (k: Knob, delta: number) => {
-  const v = settings()?.[k.key];
-  if (v !== undefined) setKnob(k, k.log ? v * k.step ** delta : v + delta * k.step);
+  const v = k.get();
+  if (v === undefined) return;
+  k.set(clamp(k.log ? v * k.step ** delta : v + delta * k.step, k.min, k.max));
+  s.lastKnob = k;
+  s.lastAt = performance.now() / 1000;
 };
-
-const setMouth = (pos: number) => { setMouthSignal(clamp(pos, 0, MOUTH.length - 1)); voice?.setMouth(mouth()); };
-const setVowel = (v: Vowel) => { setMouth(MOUTH.indexOf(v)); showHud('MOUTH', v); };
-const nearVowel = () => { const m = mouth(), i = Math.round(m); return Math.abs(m - i) < 0.12 ? MOUTH[i] : null; };
-
-function setBody(b: Body) {
-  if (!voice) return;
-  setBodySignal(b);
-  voice.setBody(b);
-  s.root = ROOT[b];
-  apply(current);
+/** The handle to ring on the head: the knob touched, or the one turned in the last moment. */
+function ring(app: Engine | null): HandleId | null {
+  const touched = page(app).find((k) => app?.touched.has(k.id));
+  if (touched) return touched.ring ?? null;
+  return s.lastKnob && performance.now() / 1000 - s.lastAt < 1.5 ? (s.lastKnob.ring ?? null) : null;
 }
+
+function setMouth(pos: number) {
+  if (!voice) return;
+  setMouthSignal(clamp(pos, 0, MOUTH.length - 1));
+  voice.setMouth(mouth()!);
+  setArticSignal(voice.articulation());
+}
+const setVowel = (v: Vowel) => { setMouth(MOUTH.indexOf(v)); showHud('MOUTH', v); };
+const nearVowel = () => { const m = mouth(); if (m === null) return null; const i = Math.round(m); return Math.abs(m - i) < 0.12 ? MOUTH[i] : null; };
 
 /** Play the last held pad: its pitch with the roll, its pressure as breath, its slide as brightness. */
 function apply(app: Engine | null) {
@@ -162,37 +240,41 @@ const onGesture = (ev: Event) => {
   if (soundOn() && voice && !voice.running) void startAudio();
 };
 
-// ── the Push screen: head | note, pitch, mouth, breath | spectrum over the 8 knob values ──
+// ── the Push screen: head (full height) | note, pitch, mouth, breath | spectrum over the knobs ──
+const HEAD_W = 236, INFO_X = 248, RIGHT_X = 456, RIGHT_W = 496;
+
 function drawInfo(g: CanvasRenderingContext2D) {
-  const x = 166, sounding = s.held.length > 0, r = voice?.readout();
+  const x = INFO_X, w = 196, sounding = s.held.length > 0, r = voice?.readout();
   text(g, Number.isNaN(s.pitch) ? '·' : noteName(s.pitch), x, 26, { size: 32, weight: 700, align: 'left', color: sounding ? '#ffffff' : '#5b6672' });
   const hz = r && r.voicing > 0.2 ? r.f0 : Number.isNaN(s.pitch) ? NaN : midiHz(s.pitch);
   const cents = Number.isNaN(hz) || Number.isNaN(s.pitch) ? 0 : Math.round((hzMidi(hz) - Math.round(s.pitch)) * 100);
   text(g, Number.isNaN(hz) ? 'f0 ---' : `${hz.toFixed(1)} Hz`, x, 56, { size: 13, align: 'left', font: MONO, color: '#c8d0d8' });
-  if (sounding) text(g, `${cents >= 0 ? '+' : ''}${cents}¢`, x + 196, 56, { size: 11, align: 'right', font: MONO, color: '#7c8792' });
+  if (sounding) text(g, `${cents >= 0 ? '+' : ''}${cents}¢`, x + w, 56, { size: 11, align: 'right', font: MONO, color: '#7c8792' });
 
-  // the mouth: U O A E I with a marker at the blend
+  // the mouth: U O A E I with a marker at the blend (none once a knob has moved the throat)
   const m = mouth(), mx = (i: number) => x + 10 + i * 44;
   g.fillStyle = '#1b2028';
   g.fillRect(mx(0), 90, mx(4) - mx(0), 2);
-  MOUTH.forEach((v, i) => text(g, v, mx(i), 80, { size: 14, weight: 700, color: Math.abs(m - i) < 0.5 ? '#78dcff' : '#4b5560' }));
-  g.fillStyle = '#78dcff';
-  g.beginPath();
-  g.arc(mx(0) + (m / 4) * (mx(4) - mx(0)), 91, 4, 0, Math.PI * 2);
-  g.fill();
+  MOUTH.forEach((v, i) => text(g, v, mx(i), 80, { size: 14, weight: 700, color: m !== null && Math.abs(m - i) < 0.5 ? '#78dcff' : '#4b5560' }));
+  if (m !== null) {
+    g.fillStyle = '#78dcff';
+    g.beginPath();
+    g.arc(mx(0) + (m / 4) * (mx(4) - mx(0)), 91, 4, 0, Math.PI * 2);
+    g.fill();
+  }
 
   // breath: lung pressure now (from the audio thread) against the 22 cmH2O top
   const lung = r ? r.pLung : sounding ? s.breath : 0;
   text(g, 'BREATH', x, 112, { size: 10, weight: 700, align: 'left', font: MONO, color: '#7c8792' });
-  text(g, `${lung.toFixed(1)}`, x + 196, 112, { size: 11, align: 'right', font: MONO, color: '#c8d0d8' });
+  text(g, `${lung.toFixed(1)}`, x + w, 112, { size: 11, align: 'right', font: MONO, color: '#c8d0d8' });
   g.fillStyle = '#1b2028';
-  g.fillRect(x, 122, 196, 6);
+  g.fillRect(x, 122, w, 6);
   g.fillStyle = css(hsv(195 - clamp(lung / 22, 0, 1) * 160, 0.8, 1));
-  g.fillRect(x, 122, 196 * clamp(lung / 22, 0, 1), 6);
+  g.fillRect(x, 122, w * clamp(lung / 22, 0, 1), 6);
 }
 
 function drawSpectrum(g: CanvasRenderingContext2D) {
-  const x0 = 384, w = 568, y0 = 6, h = 66, n = s.spectrum.length, bw = w / n;
+  const x0 = RIGHT_X, w = RIGHT_W, y0 = 6, h = 62, n = s.spectrum.length, bw = w / n;
   g.fillStyle = '#0c0f14';
   g.fillRect(x0, y0, w, h);
   for (const f of [100, 200, 500, 1000, 2000]) {
@@ -211,26 +293,25 @@ function drawSpectrum(g: CanvasRenderingContext2D) {
 }
 
 function drawKnobs(g: CanvasRenderingContext2D) {
-  const set = settings();
-  if (!set) return;
-  const x0 = 384, cw = 71, y = 80;
-  KNOBS.forEach((k, i) => {
-    const x = x0 + i * cw, v = set[k.key], on = current?.touched.has(k.id);
-    text(g, k.short, x + 2, y + 8, { size: 9, weight: 700, align: 'left', font: MONO, color: on ? '#ffffff' : css(rgbOf(k.color), 0.85) });
-    const short = k.key === 'pressure' ? v.toFixed(1) : k.key === 'vibratoDepth' ? `${Math.round(v)}¢` : k.key === 'glide' ? `${Math.round(v * 1000)}ms` : pct(v);
-    text(g, short, x + 2, y + 26, { size: 13, weight: 700, align: 'left', font: MONO, color: '#e8edf2' });
+  const cw = RIGHT_W / 8, y = 76, knobs = page(current);
+  text(g, voicePage(current) ? 'VOICE (SHIFT)' : 'THROAT · SHIFT: VOICE', RIGHT_X + RIGHT_W, y - 1, { size: 8, weight: 700, align: 'right', font: MONO, color: '#4b5560' });
+  knobs.forEach((k, i) => {
+    const x = RIGHT_X + i * cw, v = k.get(), on = current?.touched.has(k.id);
+    text(g, k.short, x + 2, y + 10, { size: 9, weight: 700, align: 'left', font: MONO, color: on ? '#ffffff' : css(rgbOf(k.color), 0.9) });
+    if (v === undefined) return;
+    text(g, (k.brief ?? k.format)(v), x + 2, y + 28, { size: 13, weight: 700, align: 'left', font: MONO, color: '#e8edf2' });
     g.fillStyle = '#1b2028';
-    g.fillRect(x + 2, y + 40, cw - 10, 4);
+    g.fillRect(x + 2, y + 42, cw - 10, 4);
     g.fillStyle = css(rgbOf(k.color));
-    g.fillRect(x + 2, y + 40, (cw - 10) * clamp(knobPos(k, v), 0, 1), 4);
+    g.fillRect(x + 2, y + 42, (cw - 10) * clamp(knobPos(k, v), 0, 1), 4);
   });
 }
 
 function drawFooter(g: CanvasRenderingContext2D) {
-  const labels = [...VOWEL_BUTTONS, !soundOn() ? 'Sound off' : audioRunning() ? 'Sound on' : 'Click page', 'Oct −', 'Oct +'];
+  const labels = [...VOWEL_BUTTONS, !soundOn() ? 'Sound off' : audioRunning() ? 'Sound on' : 'Click page'];
   const near = nearVowel();
-  labels.forEach((label, i) => {
-    const on = (i < 5 && near === label) || (i === 5 && soundOn() && audioRunning());
+  labels.forEach((label, j) => {
+    const i = FIRST_VOWEL_BUTTON - 1 + j, on = (j < 5 && near === label) || (j === 5 && soundOn() && audioRunning());
     g.fillStyle = on ? css(chimera.color) : 'rgba(20,23,28,0.9)';
     g.fillRect(i * 120 + 4, 146, 112, 13);
     text(g, label, i * 120 + 60, 153, { size: 10, weight: 700, color: on ? '#050505' : '#c8d0d8' });
@@ -242,7 +323,7 @@ function drawHud(g: CanvasRenderingContext2D) {
   if (now > s.hud.until || !s.hud.label) return;
   g.save();
   g.globalAlpha = clamp((s.hud.until - now) / 0.35, 0, 1);
-  const w = 300, h = 34, x = 384 + (568 - w) / 2, y = 88;
+  const w = 330, h = 34, x = RIGHT_X + (RIGHT_W - w) / 2, y = 90;
   g.fillStyle = 'rgba(10, 12, 16, 0.92)';
   g.fillRect(x, y, w, h);
   g.strokeStyle = 'rgba(255,255,255,0.18)';
@@ -263,7 +344,7 @@ export const chimera: Demo = {
       current = app;
       yield* app.usePressureMode('mpe'); // restored to poly when we leave
       yield* app.useStripHost(); // we light the strip: the mouth position
-      for (const k of KNOBS) app.twin.markEncoder(k.id, k.color);
+      markKnobs(app);
       yield* Effect.acquireRelease(
         Effect.sync(() => { for (const t of ['pointerdown', 'keydown'] as const) addEventListener(t, onGesture, { capture: true, passive: true }); }),
         () => Effect.sync(() => { for (const t of ['pointerdown', 'keydown'] as const) removeEventListener(t, onGesture, { capture: true }); current = null; }),
@@ -281,13 +362,15 @@ export const chimera: Demo = {
       }
       // our settings win over the engine's (they survive a tab switch)
       v.setSource({ ...settings()! });
-      v.setBody(body());
-      v.setMouth(mouth());
-      s.root = ROOT[body()];
+      v.setBody(bodyOf(size()), true);
+      const a = artic(), m = mouth();
+      if (a && m === null) v.setArtic(a);
+      else setMouth(m ?? MOUTH.indexOf('A'));
+      setArticSignal(v.articulation());
       apply(app);
       yield* Effect.acquireRelease(
         Effect.sync(() => {
-          head = v.createHead(144, 3);
+          head = v.createHead(HEAD_W, 160, 2, { align: 'left' });
           return v.onRunningChange(setAudioRunning);
         }),
         (off) => Effect.sync(() => {
@@ -295,9 +378,9 @@ export const chimera: Demo = {
           s.held = [];
           s.landed.clear();
           v.gate(0);
+          if (s.sizeTimer) setSize(size(), true);
           // the voice runs a physical model all the time: no CPU for it while another tab plays
           void v.suspend();
-          head?.dispose();
           head = null;
         }),
       );
@@ -318,20 +401,23 @@ export const chimera: Demo = {
     } else if (ev.type === 'channelPressure') {
       apply(app);
     } else if (ev.type === 'encoder') {
-      const k = KNOB_BY_ID.get(ev.id);
+      const k = page(app).find((k) => k.id === ev.id);
       if (k) { turnKnob(k, ev.delta); showKnob(k); }
-    } else if (ev.type === 'touch' && ev.touched) {
-      const k = KNOB_BY_ID.get(ev.id);
-      if (k) showKnob(k);
+    } else if (ev.type === 'touch') {
+      const k = page(app).find((k) => k.id === ev.id);
+      if (k && ev.touched) showKnob(k);
+      if (k?.id === 'e8' && !ev.touched && s.sizeTimer) setSize(size(), true); // the size knob let go: rebuild now
     } else if (ev.type === 'strip') {
       setMouth(ev.value * (MOUTH.length - 1));
-    } else if (ev.type === 'button' && ev.pressed) {
+    } else if (ev.type === 'button') {
+      if (ev.id === 'shift') markKnobs(app); // the knobs change page while Shift is held
+      if (!ev.pressed) return;
       const i = /^lower(\d)$/.exec(ev.id)?.[1];
-      const vowel = i ? VOWEL_BUTTONS[+i - 1] : undefined;
+      const vowel = i ? VOWEL_BUTTONS[+i - FIRST_VOWEL_BUTTON] : undefined;
       if (vowel) setVowel(vowel);
-      if (ev.id === 'lower6') flipSound(); // a Push button is not a page click, so it cannot unblock audio
-      if (ev.id === 'lower7' || ev.id === 'octaveDown') { s.root = Math.max(12, s.root - 12); showHud('OCTAVE', noteName(s.root)); }
-      if (ev.id === 'lower8' || ev.id === 'octaveUp') { s.root = Math.min(72, s.root + 12); showHud('OCTAVE', noteName(s.root)); }
+      if (ev.id === 'lower8') flipSound(); // a Push button is not a page click, so it cannot unblock audio
+      if (ev.id === 'octaveDown') { s.root = Math.max(12, s.root - 12); showHud('OCTAVE', noteName(s.root)); }
+      if (ev.id === 'octaveUp') { s.root = Math.min(72, s.root + 12); showHud('OCTAVE', noteName(s.root)); }
     }
   },
 
@@ -342,28 +428,32 @@ export const chimera: Demo = {
       app.leds.pad(note, note === singing && p ? hsv(195 - p.pressure * 150, 1 - Math.abs(p.x) * 0.4, 0.35 + 0.65 * p.pressure) : p?.down ? [40, 60, 80] : pitch % 12 === 0 ? [0, 90, 255] : inScale(pitch) ? [36, 36, 36] : null);
     }
     const near = nearVowel();
-    VOWEL_BUTTONS.forEach((v, i) => app.leds.button(20 + i, near === v ? this.color : [20, 45, 60]));
-    app.leds.button(25, !soundOn() ? [0, 40, 15] : audioRunning() ? [0, 220, 90] : [255, 150, 0]);
-    app.leds.button(26, [60, 60, 60]);
-    app.leds.button(27, [60, 60, 60]);
+    app.leds.button(20, null);
+    app.leds.button(21, null);
+    VOWEL_BUTTONS.forEach((v, i) => app.leds.button(20 + FIRST_VOWEL_BUTTON - 1 + i, near === v ? this.color : [20, 45, 60]));
+    app.leds.button(27, !soundOn() ? [0, 40, 15] : audioRunning() ? [0, 220, 90] : [255, 150, 0]);
     // the strip: a dim mark at each vowel, the mouth bright
-    const at = (mouth() / (MOUTH.length - 1)) * 30;
+    const m = mouth(), at = m === null ? -9 : (m / (MOUTH.length - 1)) * 30;
     app.leds.setStrip(Array.from({ length: 31 }, (_, i) => (Math.abs(i - at) < 0.75 ? 7 : Math.abs(i - at) < 1.5 ? 4 : i % 7.5 < 1 ? 1 : 0)));
 
-    if (head) {
-      head.frame(dt);
-      if (panelCanvas) {
-        const pc = panelCanvas.getContext('2d')!;
-        if (panelCanvas.width !== head.canvas.width) panelCanvas.width = panelCanvas.height = head.canvas.width;
-        pc.drawImage(head.canvas, 0, 0);
+    const r = ring(app);
+    head?.frame(dt, r);
+    if (panelCanvas && voice) {
+      const w = Math.max(1, Math.round(panelCanvas.clientWidth)), h = Math.max(1, Math.round(panelCanvas.clientHeight)), dpr = Math.min(2, devicePixelRatio || 1);
+      if (!panelHead || panelCanvas.width !== Math.round(w * dpr) || panelCanvas.height !== Math.round(h * dpr)) {
+        panelCanvas.width = Math.round(w * dpr);
+        panelCanvas.height = Math.round(h * dpr);
+        panelHead = voice.createHead(w, h, dpr);
       }
+      panelHead.frame(dt, r);
+      panelCanvas.getContext('2d')!.drawImage(panelHead.canvas, 0, 0);
     }
     s.hasSpectrum = !!voice && audioRunning() && voice.spectrum(s.spectrum, SPECTRUM_LO, SPECTRUM_HI);
   },
 
   draw(g) {
-    if (head) g.drawImage(head.canvas, 8, 0, 144, 144);
-    else text(g, status() === 'failed' ? 'CHIMERA did not load' : 'Loading CHIMERA', 80, 72, { size: 12, color: '#7c8792' });
+    if (head) g.drawImage(head.canvas, 0, 0, HEAD_W, 160);
+    else text(g, status() === 'failed' ? 'No CHIMERA' : 'Loading', HEAD_W / 2, 80, { size: 12, color: '#7c8792' });
     drawInfo(g);
     drawSpectrum(g);
     drawKnobs(g);
@@ -372,14 +462,36 @@ export const chimera: Demo = {
   },
 
   Panel: () => {
-    onCleanup(() => (panelCanvas = null));
+    onCleanup(() => { panelCanvas = null; panelHead = null; });
+    // k.get() reads the signals, so each value follows its knob
+    const sliders = (knobs: ReadonlyArray<Knob>, extra?: JSX.Element) => (
+      <div class="stat-grid">
+        <For each={knobs}>
+          {(k, i) => {
+            const v = () => k.get();
+            return (
+              <>
+                <span>{i() + 1} · {k.label.charAt(0) + k.label.slice(1).toLowerCase()}</span>
+                <label class="toggle">
+                  <input type="range" class="range-input" min="0" max="1" step="0.001" value={clamp(knobPos(k, v() ?? k.min), 0, 1)}
+                    onInput={(e) => { const u = +e.currentTarget.value; k.set(k.log ? k.min * (k.max / k.min) ** u : k.min + u * (k.max - k.min)); s.lastKnob = k; s.lastAt = performance.now() / 1000; }}
+                    onChange={() => { if (k === THROAT[7]) setSize(size(), true); }} />
+                  <span class="v">{v() === undefined ? '' : k.format(v()!)}</span>
+                </label>
+              </>
+            );
+          }}
+        </For>
+        {extra}
+      </div>
+    );
     return (
       <>
         <h2>Chimera</h2>
         <p>
-          A physical model of the human voice: lungs, vocal folds and a 3D airway, computed sample by sample. <a href="https://github.com/jamesondh/chimera-vocal-synth" target="_blank" rel="noreferrer">CHIMERA</a> by Jameson Hodge (MIT), in Rust compiled to WASM, here played from the Push.
+          A physical model of the human voice: lungs, vocal folds and the airway of the throat and mouth, computed sample by sample. <a href="https://github.com/jamesondh/chimera-vocal-synth" target="_blank" rel="noreferrer">CHIMERA</a> by Jameson Hodge (MIT), in Rust compiled to WASM, here played from the Push.
         </p>
-        <canvas ref={(c) => (panelCanvas = c)} class="chimera-head" aria-label="The singing head" />
+        <canvas ref={(c) => (panelCanvas = c)} class="chimera-head" aria-label="The singing head, cut through the middle" />
         <Show when={status() !== 'failed'} fallback={<p class="muted">The engine did not load. Reload the page to try again.</p>}>
           <div class="row">
             <button type="button" data-sound-toggle classList={{ active: soundOn() && audioRunning() }} onClick={toggleSound}>{!soundOn() ? 'Sound off' : audioRunning() ? 'Sound on' : 'Start sound'}</button>
@@ -387,39 +499,27 @@ export const chimera: Demo = {
             <Show when={status() === 'loading'}><span class="muted">Loading the engine…</span></Show>
           </div>
           <div class="row">
-            <For each={VOWEL_BUTTONS}>{(v) => <button type="button" classList={{ active: MOUTH[Math.round(mouth())] === v && Math.abs(mouth() - Math.round(mouth())) < 0.12 }} onClick={() => setVowel(v)}>{v}</button>}</For>
+            <For each={VOWEL_BUTTONS}>{(v) => <button type="button" classList={{ active: nearVowel() === v }} onClick={() => setVowel(v)}>{v}</button>}</For>
             <span class="muted">or the touch strip</span>
           </div>
-          <div class="row">
-            <For each={BODIES}>{(b) => <button type="button" classList={{ active: body() === b }} onClick={() => setBody(b)}>{BODY_LABEL[b]}</button>}</For>
-          </div>
+          <Show when={artic()}>
+            <b class="section-label">Throat (knobs)</b>
+            <div class="card-box">{sliders(THROAT)}</div>
+          </Show>
           <Show when={settings()}>
-            {(set) => (
-              <div class="card-box">
-                <div class="stat-grid">
-                  <For each={KNOBS}>
-                    {(k, i) => (
-                      <>
-                        <span>{i() + 1} · {k.label.charAt(0) + k.label.slice(1).toLowerCase()}</span>
-                        <label class="toggle">
-                          <input type="range" class="range-input" min="0" max="1" step="0.001" value={knobPos(k, set()[k.key])}
-                            onInput={(e) => { const u = +e.currentTarget.value; setKnob(k, k.log ? k.min * (k.max / k.min) ** u : k.min + u * (k.max - k.min)); }} />
-                          <span class="v">{k.format(set()[k.key])}</span>
-                        </label>
-                      </>
-                    )}
-                  </For>
-                  <span>Roll bend range</span>
-                  <label class="toggle">
-                    <input type="range" class="range-input" min="0" max="12" step="1" value={bendRange()} onInput={(e) => { setBendRange(+e.currentTarget.value); apply(current); }} />
-                    <span class="v">{bendRange()} st</span>
-                  </label>
-                </div>
-              </div>
-            )}
+            <b class="section-label">Voice (Shift + knobs)</b>
+            <div class="card-box">
+              {sliders(VOICE, <>
+                <span>Roll bend range</span>
+                <label class="toggle">
+                  <input type="range" class="range-input" min="0" max="12" step="1" value={bendRange()} onInput={(e) => { setBendRange(+e.currentTarget.value); apply(current); }} />
+                  <span class="v">{bendRange()} st</span>
+                </label>
+              </>)}
+            </div>
           </Show>
         </Show>
-        <p class="muted">Pads play one voice in fourths (blue = C); the last pad held sings. Press harder for more breath, roll left/right to bend, slide up/down from where you landed for brightness. Knobs 1-8 shape the voice (knob 1 is the breath at a light touch). The touch strip moves the mouth from U to I; lower buttons 1-5 jump to A E I O U, 6 turns the sound on and off, 7 and 8 shift octaves.</p>
+        <p class="muted">Pads play one voice in fourths (blue = C); the last pad held sings. Press harder for more breath, roll left/right to bend, slide up/down from where you landed for brightness. Knobs 1-8 move the throat: jaw, tongue, lips, soft palate, larynx and body size; hold Shift for the voice (knob 1 is then the breath at a light touch). The touch strip moves the mouth from U to I; lower buttons 3-7 jump to A E I O U, 8 turns the sound on and off. The Octave buttons shift the pads.</p>
       </>
     );
   },

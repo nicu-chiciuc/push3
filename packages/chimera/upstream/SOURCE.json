@@ -23,8 +23,6 @@
     "src/ui/colors.ts",
     "src/ui/creatureVisuals.ts",
     "src/ui/render/anatomy.ts",
-    "src/ui/render/anatomy3d.ts",
-    "src/ui/render/beams3d.ts",
     "src/ui/render/expression.ts",
     "src/ui/render/geom.ts",
     "src/ui/render/profile.ts",
