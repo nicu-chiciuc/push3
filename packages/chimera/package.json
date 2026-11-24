@@ -5,7 +5,11 @@
   "license": "MIT",
   "private": true,
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/worklet.ts",
+    "./src/worklet-capture.ts",
+    "./upstream/src/worklet/processor.ts"
+  ],
   "exports": {
     ".": {
       "types": "./src/api.ts",

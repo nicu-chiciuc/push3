@@ -22,6 +22,13 @@ const BODY_LABEL: Record<Body, string> = { male: 'Male', female: 'Female', child
 /** Lower buttons 1-5, in the order people say them; the strip runs U O A E I (see MOUTH). */
 const VOWEL_BUTTONS: ReadonlyArray<Vowel> = ['A', 'E', 'I', 'O', 'U'];
 const SPECTRUM_LO = 60, SPECTRUM_HI = 5000;
+// The finger's expression, as CHIMERA's plugin maps MPE (crates/chimera-plugin/src/core.rs):
+/** pressure adds up to this share of the breath knob (the knob is the breath at a light touch) */
+const PRESSURE_DEPTH = 0.75;
+/** brightness per unit of slide, counted from where the finger landed */
+const SLIDE_DEPTH = 1;
+/** a slide this soon after its note starts (s) is where the finger landed */
+const SLIDE_LANDING = 0.05;
 
 // ── the 8 knobs, left to right ──
 type Key = Exclude<keyof VoiceSettings, 'f0'>;
@@ -73,6 +80,8 @@ const s = {
   root: ROOT.male,
   /** pad notes held, in press order: the last one sings */
   held: [] as number[],
+  /** per held pad: when it went down (s) and the slide it landed on */
+  landed: new Map<number, { at: number; y: number }>(),
   /** what the voice plays now */
   pitch: NaN,
   breath: 0,
@@ -127,8 +136,8 @@ function apply(app: Engine | null) {
     return;
   }
   s.pitch = padPitch(note) + p.x * bendRange();
-  s.breath = clamp(set.pressure * (0.45 + 0.75 * p.pressure), 2, 22);
-  s.bright = clamp(set.brightness + (p.y - 0.5), 0, 1);
+  s.breath = Math.min(22, set.pressure * (1 + PRESSURE_DEPTH * p.pressure));
+  s.bright = clamp(set.brightness + (p.y - (s.landed.get(note)?.y ?? p.y)) * SLIDE_DEPTH, 0, 1);
   v.setSource({ f0: midiHz(s.pitch), pressure: s.breath, brightness: s.bright });
   v.gate(1);
 }
@@ -284,6 +293,7 @@ export const chimera: Demo = {
         (off) => Effect.sync(() => {
           off();
           s.held = [];
+          s.landed.clear();
           v.gate(0);
           // the voice runs a physical model all the time: no CPU for it while another tab plays
           void v.suspend();
@@ -299,8 +309,10 @@ export const chimera: Demo = {
 
   onEvent(ev, app) {
     if (ev.type === 'pad') {
-      if (ev.action === 'down') s.held = [...s.held.filter((n) => n !== ev.note), ev.note];
-      else if (ev.action === 'up') s.held = s.held.filter((n) => n !== ev.note);
+      const now = performance.now() / 1000, land = s.landed.get(ev.note);
+      if (ev.action === 'down') { s.held = [...s.held.filter((n) => n !== ev.note), ev.note]; s.landed.set(ev.note, { at: now, y: 0.5 }); }
+      else if (ev.action === 'up') { s.held = s.held.filter((n) => n !== ev.note); s.landed.delete(ev.note); }
+      else if (ev.action === 'slide' && land && now - land.at < SLIDE_LANDING) land.y = ev.y;
       else if (ev.note !== s.held.at(-1)) return; // only the singing finger shapes the voice
       apply(app);
     } else if (ev.type === 'channelPressure') {
@@ -407,7 +419,7 @@ export const chimera: Demo = {
             )}
           </Show>
         </Show>
-        <p class="muted">Pads play one voice in fourths (blue = C); the last pad held sings. Press harder for more breath, roll left/right to bend, slide up/down for brightness. Knobs 1-8 shape the voice. The touch strip moves the mouth from U to I; lower buttons 1-5 jump to A E I O U, 6 turns the sound on and off, 7 and 8 shift octaves.</p>
+        <p class="muted">Pads play one voice in fourths (blue = C); the last pad held sings. Press harder for more breath, roll left/right to bend, slide up/down from where you landed for brightness. Knobs 1-8 shape the voice (knob 1 is the breath at a light touch). The touch strip moves the mouth from U to I; lower buttons 1-5 jump to A E I O U, 6 turns the sound on and off, 7 and 8 shift octaves.</p>
       </>
     );
   },

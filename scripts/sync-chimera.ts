@@ -12,7 +12,8 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
-/** What the tab uses (the engine, the worklet, the 3D head) and everything those files import. */
+/** What the tab uses (the engine, the worklet, the 3D head) and everything those files import.
+ *  Not AudioEngine: packages/chimera/src/engine.ts loads our worklet (src/worklet.ts) instead. */
 const FILES = [
   'LICENSE',
   'src/wasm/chimera.ts',
@@ -23,9 +24,6 @@ const FILES = [
   'src/worklet/processor.ts',
   'src/worklet/protocol.ts',
   'src/worklet/telemetry.ts',
-  'src/audio/AudioEngine.ts',
-  'src/audio/pluginBridge.ts',
-  'src/audio/sampleAnalyser.ts',
   'src/ui/analysis.ts',
   'src/ui/body.ts',
   'src/ui/colors.ts',
