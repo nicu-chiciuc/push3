@@ -6,6 +6,9 @@
 // copied from the checkout's own build (`bun run wasm` there). With --build, this script builds it
 // with cargo into a temporary target directory instead, so the checkout itself does not change.
 // Our own glue lives in packages/chimera/src and is never touched here.
+//
+// `--pull-request <number>`: the checkout is on a pull request that CHIMERA has not merged yet.
+// SOURCE.json then names it, because the commit is not on CHIMERA's main branch.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -34,12 +37,16 @@ const FILES = [
   'src/ui/render/profile.ts',
   'src/ui/render/readouts.ts',
   'src/ui/render/vector.ts',
+  'src/ui/voiceAlloc.ts',
 ];
 const WASM = 'src/wasm/chimera.wasm';
 const UPSTREAM = 'https://github.com/jamesondh/chimera-vocal-synth';
 
 const args = process.argv.slice(2);
 const build = args.includes('--build');
+const pr = args.indexOf('--pull-request');
+const pullRequest = pr < 0 ? null : args.splice(pr, 2)[1];
+if (pr >= 0 && !/^\d+$/.test(pullRequest ?? '')) throw new Error('--pull-request needs a number');
 const from = resolve(args.find((a) => !a.startsWith('--')) ?? process.env.CHIMERA_DIR ?? join(homedir(), 'dev/chimera-vocal-synth'));
 const to = resolve(import.meta.dirname, '../packages/chimera/upstream');
 const git = (...a: string[]) => execFileSync('git', ['-C', from, ...a], { encoding: 'utf8' }).trim();
@@ -70,6 +77,7 @@ if (target) rmSync(target, { recursive: true, force: true });
 const source = {
   repository: UPSTREAM,
   commit,
+  ...(pullRequest ? { pullRequest: `${UPSTREAM}/pull/${pullRequest}` } : {}),
   commitDate: git('show', '-s', '--format=%cI', commit),
   localChanges: dirty ? dirty.split('\n') : [],
   wasm: { built: build ? 'by this script (cargo, --release, wasm32-unknown-unknown)' : `copied from the checkout's ${WASM}`, bytes: wasm.length, sha256: createHash('sha256').update(wasm).digest('hex') },
