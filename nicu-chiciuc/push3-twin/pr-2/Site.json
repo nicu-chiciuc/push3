@@ -1,5 +1,5 @@
 {
-  "status": "created",
+  "status": "deleting",
   "fqn": "Site",
   "logicalId": "Site",
   "instanceId": "877cb0ff11139d57b4102915dd3e631c",
@@ -45,9 +45,9 @@
       "metadata": "a8a8429ecf5f7859e8ffcce66b8f401be9106f6d75b84f999acc6214701cb3d4"
     }
   },
-  "bindings": [],
-  "providerVersion": 0,
   "downstream": [],
+  "providerVersion": 0,
+  "bindings": [],
   "removalPolicy": "destroy",
   "providerMode": "live"
 }
