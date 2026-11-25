@@ -1,0 +1,27 @@
+{
+  "status": "creating",
+  "fqn": "Site",
+  "logicalId": "Site",
+  "instanceId": "877cb0ff11139d57b4102915dd3e631c",
+  "downstream": [],
+  "props": {
+    "name": "push3-twin-pr-2",
+    "assets": {
+      "directory": "./dist",
+      "notFoundHandling": "single-page-application"
+    },
+    "compatibility": {
+      "date": "2026-11-01"
+    },
+    "workersDev": {
+      "enabled": true,
+      "previewsEnabled": true
+    },
+    "isExternal": true
+  },
+  "providerVersion": 0,
+  "resourceType": "Cloudflare.Worker",
+  "bindings": [],
+  "removalPolicy": "destroy",
+  "providerMode": "live"
+}
