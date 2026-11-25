@@ -1,5 +1,5 @@
 {
-  "status": "creating",
+  "status": "created",
   "fqn": "Site",
   "logicalId": "Site",
   "instanceId": "877cb0ff11139d57b4102915dd3e631c",
@@ -19,8 +19,34 @@
     },
     "isExternal": true
   },
-  "providerVersion": 0,
+  "attr": {
+    "workerId": "5b9ca1fa7bc544e5ac3d68492a6f13fb",
+    "workerName": "push3-twin-pr-2",
+    "logpush": false,
+    "url": "https://push3-twin-pr-2.pfp.workers.dev",
+    "urls": [
+      "https://push3-twin-pr-2.pfp.workers.dev"
+    ],
+    "tags": [
+      "alchemy:stack:nicu-chiciuc/push3-twin",
+      "alchemy:stage:pr-2",
+      "alchemy:id:Site"
+    ],
+    "durableObjectNamespaces": {},
+    "accountId": "fe57d01d7ab41f60d00ba1aade20eb33",
+    "routes": [],
+    "crons": [],
+    "tailConsumers": [],
+    "versionId": "3d41a215-56eb-4a8d-84d1-960a207fca47",
+    "deploymentId": "8abe0683-5b16-44b1-9eaf-922b230222d8",
+    "secretNames": [],
+    "hash": {
+      "assets": "eb70e8caf7d9c3124c93cc563229cdcc5356328b6e7c0249d31fc40884f92aac",
+      "metadata": "a8a8429ecf5f7859e8ffcce66b8f401be9106f6d75b84f999acc6214701cb3d4"
+    }
+  },
   "bindings": [],
+  "providerVersion": 0,
   "downstream": [],
   "removalPolicy": "destroy",
   "providerMode": "live"
