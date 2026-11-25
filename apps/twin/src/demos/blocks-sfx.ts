@@ -42,6 +42,11 @@ export class Sfx {
     if (on) this.wake(); else void this.ctx?.suspend();
   }
 
+  /** The audio clock and the output, for the music. Null while sound is off or not allowed yet. */
+  bus(): { ctx: AudioContext; out: AudioNode } | null {
+    return this.on && this.ctx && this.out && this.ctx.state === 'running' ? { ctx: this.ctx, out: this.out } : null;
+  }
+
   /** The audio clock when sound can play now, else null (sounds are dropped, not kept for later). */
   private now(): number | null {
     if (!this.on) return null;

@@ -102,7 +102,7 @@ apps/twin/src/           Browser: Vite + Solid
 | Paint | Pads as an 8×8 canvas; knobs = hue/sat/brightness |
 | Expression | Channel AT / Poly AT / MPE modes, per-finger pressure + roll + slide, Web Audio synth |
 | Ripple | Light show from the browser every frame, or the Push's own hardware pulse/blink animation |
-| Blocks | A falling-block game whose well runs down the Push: a piece comes in on the display (two rows of cells as large as the pads), passes the lower display buttons and lands on the pads. Arrows, jog wheel, tempo knob, pads or the keyboard; the rules are plain TypeScript with no browser in them (`blocks-game.ts`) |
+| Blocks | A falling-block game whose well runs down the Push: a piece comes in on the display (two rows of cells as large as the pads), passes the lower display buttons and lands on the pads. Arrows, jog wheel, tempo knob, pads or the keyboard. It has an original chip-style tune (Web Audio oscillators, faster at each level; Metronome or B turns it off). The rules are plain TypeScript with no browser in them (`blocks-game.ts`) |
 | Snake | A game on the pad grid (arrows, jog wheel or pads to steer) |
 | Screen | Scrolling text, plasma, dropped images, clock on the Push display; pads mirror it. Ninth tab: on the page only (key 9; no Push button) |
 | CSS Knobs | 8 knobs → 8 CSS custom properties on a live card, presets on pads, generated CSS. Tenth tab: on the page only (key 0) |

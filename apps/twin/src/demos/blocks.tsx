@@ -7,6 +7,7 @@ import { ANIM, css, hsv, padNote, type PushEvent, type RGB } from '@push3/protoc
 import { FONT, text } from '../engine/screen.ts';
 import { store, type Demo } from '../engine/engine.ts';
 import { CLEAR_TIME, COLS, Game, LINES_PER_LEVEL, ROWS, SHAPES, type Cell } from './blocks-game.ts';
+import { Music, musicTempo } from './blocks-music.ts';
 import { Sfx } from './blocks-sfx.ts';
 
 // ── where each row of the well is on the device ──
@@ -36,6 +37,7 @@ const FLASH_TIME = 0.14, TRAIL_TIME = 0.2, CALLOUT_TIME = 1.6;
 const game = new Game();
 const sfx = new Sfx();
 sfx.volume = store.get('blocksVolume', 0.7);
+const music = new Music();
 
 type Status = 'ready' | 'playing' | 'paused' | 'over';
 const [status, setStatus] = createSignal<Status>('ready');
@@ -45,6 +47,7 @@ const [level, setLevel] = createSignal(1);
 const [lines, setLines] = createSignal(0);
 const [soundOn, setSoundOn] = createSignal(store.get('blocksSound', true));
 sfx.on = soundOn();
+const [musicOn, setMusicOn] = createSignal(store.get('blocksMusic', true));
 
 /** What the view remembers between frames: effects, and the keys held. */
 const fx = {
@@ -52,7 +55,7 @@ const fx = {
   flashes: [] as Array<{ cells: ReadonlyArray<Cell>; t0: number }>,
   trails: [] as Array<{ x: number; y0: number; y1: number; kind: number; t0: number }>,
   callout: null as { title: string; sub: string; color: string; t0: number } | null,
-  scoreT: -9, levelT: -9, volumeT: -9, overT: -9,
+  scoreT: -9, levelT: -9, volumeT: -9, musicT: -9, overT: -9,
   shake: 0,
   newBest: false,
   left: false, right: false, das: { dir: 0, t: 0 },
@@ -115,6 +118,14 @@ function toggleSound() {
   sfx.setOn(soundOn());
   fx.volumeT = fx.now;
 }
+function toggleMusic() {
+  setMusicOn(!musicOn());
+  store.set('blocksMusic', musicOn());
+  fx.musicT = fx.now;
+}
+/** The music plays while a game goes on, and not while it is paused. */
+const updateMusic = (play = true) =>
+  music.update(sfx.bus(), play && musicOn() && (game.phase === 'playing' || game.phase === 'clearing') && !game.paused, musicTempo(game.level));
 function turnVolume(delta: number) {
   sfx.setVolume(sfx.volume + delta / 110);
   store.set('blocksVolume', sfx.volume);
@@ -139,6 +150,7 @@ function onButton(ev: Extract<PushEvent, { type: 'button' }>) {
     case 'play': playPause(); break;
     case 'new': newGame(); break;
     case 'mute': toggleSound(); break;
+    case 'metronome': toggleMusic(); break;
   }
 }
 
@@ -159,6 +171,7 @@ function onKeyDown(ev: KeyboardEvent) {
     case 'p': if (once) playPause(); break;
     case 'n': if (once) newGame(); break;
     case 'm': if (once) toggleSound(); break;
+    case 'b': if (once) toggleMusic(); break;
     default: return;
   }
   ev.preventDefault(); // no page scroll
@@ -177,7 +190,7 @@ function react(t: number) {
   let moves = 0;
   for (const ev of game.events.splice(0)) {
     switch (ev.type) {
-      case 'start': sfx.start(); break;
+      case 'start': sfx.start(); music.rewind(); break;
       case 'move': sfx.move(ev.x + 1, moves++ * 0.02); break;
       case 'rotate': sfx.rotate(); break;
       case 'hold': sfx.hold(); break;
@@ -425,14 +438,16 @@ function drawOverlay(g: CanvasRenderingContext2D, t: number) {
     g.restore();
   }
 
-  if (t - fx.volumeT < 1.3) {
-    const a = Math.min(1, (1.3 - (t - fx.volumeT)) / 0.3);
+  const musicNote = fx.musicT > fx.volumeT, noteT = Math.max(fx.musicT, fx.volumeT);
+  if (t - noteT < 1.3) {
+    const a = Math.min(1, (1.3 - (t - noteT)) / 0.3);
     g.save();
     g.globalAlpha = a;
     g.fillStyle = 'rgba(16,19,24,0.94)';
     roundRect(g, 390, 126, 180, 26, 13);
     g.fill();
-    if (soundOn()) {
+    if (musicNote) text(g, musicOn() ? (soundOn() ? 'Music on' : 'Music on (sound is off)') : 'Music off', 480, 139.5, { size: 12, color: musicOn() ? '#e8edf2' : '#ffb199' });
+    else if (soundOn()) {
       text(g, 'Volume', 404, 139.5, { size: 12, align: 'left', color: '#9aa4b0' });
       g.fillStyle = '#2a303a';
       roundRect(g, 456, 136, 100, 6, 3);
@@ -468,6 +483,7 @@ export const blocks: Demo = {
           for (const type of ['pointerdown', 'keydown'] as const) removeEventListener(type, onGesture, { capture: true });
           setPaused(true, true);
           releaseKeys();
+          updateMusic(false);
         }),
     ),
 
@@ -493,6 +509,7 @@ export const blocks: Demo = {
     }
     game.update(dt);
     react(t);
+    updateMusic();
     fx.shake *= Math.exp(-dt * 11);
     setScore(game.score);
     setLevel(game.level);
@@ -521,6 +538,7 @@ export const blocks: Demo = {
     app.leds.button(33, live && !game.holdUsed ? WHITE : [38, 38, 38]); // Swap
     app.leds.button(92, [77, 77, 77]); // New
     app.leds.button(60, soundOn() ? [38, 38, 38] : [255, 64, 0]); // Mute
+    app.leds.button(9, musicOn() ? WHITE : [38, 38, 38]); // Metronome: the music
     if (status() === 'playing') app.leds.button(85, [0, 255, 0]);
     else app.leds.button(85, [0, 255, 0], { ch: status() === 'paused' ? ANIM.blinkSlow : ANIM.pulse, from: [0, 56, 0] });
   },
@@ -581,12 +599,13 @@ export const blocks: Demo = {
         <button class="primary" onClick={playPause}>{status() === 'playing' ? 'Pause' : status() === 'paused' ? 'Resume' : 'Play'}</button>
         <button onClick={newGame}>New game</button>
         <button onClick={toggleSound}>{soundOn() ? 'Sound on' : 'Sound off'}</button>
+        <button onClick={toggleMusic}>{musicOn() ? 'Music on' : 'Music off'}</button>
       </div>
       <ul class="tips">
-        <li><b>Keyboard:</b> <kbd>←</kbd> <kbd>→</kbd> move, <kbd>↓</kbd> faster, <kbd>↑</kbd> or <kbd>X</kbd> turn, <kbd>Z</kbd> turn back, <kbd>Space</kbd> drop, <kbd>C</kbd> hold, <kbd>P</kbd> pause, <kbd>N</kbd> new game, <kbd>M</kbd> sound.</li>
+        <li><b>Keyboard:</b> <kbd>←</kbd> <kbd>→</kbd> move, <kbd>↓</kbd> faster, <kbd>↑</kbd> or <kbd>X</kbd> turn, <kbd>Z</kbd> turn back, <kbd>Space</kbd> drop, <kbd>C</kbd> hold, <kbd>P</kbd> pause, <kbd>N</kbd> new game, <kbd>M</kbd> sound, <kbd>B</kbd> music.</li>
         <li><b>Push arrows:</b> left and right move (hold to repeat), down is faster, up turns, the center drops.</li>
         <li><b>Push knobs:</b> the jog wheel moves, one click for each column. The tempo knob turns the piece both ways. The volume knob sets the volume.</li>
-        <li><b>Push buttons:</b> Swap holds a piece for later, Play pauses, New starts again, Mute stops the sound.</li>
+        <li><b>Push buttons:</b> Swap holds a piece for later, Play pauses, New starts again, Mute stops the sound, Metronome stops the music.</li>
         <li><b>Pads:</b> tap beside the piece and it goes to that column. Tap the piece to turn it. Tap below it to drop it.</li>
         <li>The dim cells show where the piece lands. The scene buttons count lines: eight make a level, and each level falls faster.</li>
       </ul>
