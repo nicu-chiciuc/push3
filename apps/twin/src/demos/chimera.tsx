@@ -1,14 +1,16 @@
 // Chimera: CHIMERA, a physical model of the human voice by Jameson Hodge (MIT,
 // github.com/jamesondh/chimera-vocal-synth), played from the Push. Its 2D head (a cut through the
 // middle of the head, as on chimera.audio) sings on the Push screen. Pads (MPE, in fourths) play
-// one voice, last note wins: roll bends the pitch, pressure is the breath, slide the brightness.
+// chords: each pad held has a whole voice of its own (1 to 4 voices, Page left and right), and its
+// finger shapes that voice: roll bends the pitch, pressure is the breath, slide the brightness.
+// With one voice the last pad sings, as it did.
 // Knobs move the throat (jaw, tongue, lips, soft palate, larynx, body size); with Shift held they
 // shape the voice. The touch strip moves the mouth through U O A E I, lower buttons 3-7 jump to a
 // vowel.
 import { createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
 import { Effect } from 'effect';
 import { css, hsv, type RGB } from '@push3/protocol';
-import { loadChimera, MOUTH, type Articulation, type ArticKey, type BodyMix, type Chimera, type HandleId, type Head, type VoiceSettings, type Vowel } from '@push3/chimera';
+import { loadChimera, MAX_VOICES, MOUTH, type Articulation, type ArticKey, type BodyMix, type Chimera, type HandleId, type Head, type VoiceSettings, type Vowel } from '@push3/chimera';
 import { MONO, text } from '../engine/screen.ts';
 import type { Demo, Engine } from '../engine/engine.ts';
 
@@ -78,13 +80,16 @@ const [mouth, setMouthSignal] = createSignal<number | null>(MOUTH.indexOf('A'));
 /** Body size: 0 adult male, 0.5 adult female, 1 child (blends between). */
 const [size, setSizeSignal] = createSignal(0);
 const [bendRange, setBendRange] = createSignal(2);
+/** How many voices play: two pads are a chord with no setting to find. (Each voice is a whole
+ *  engine, so more of them cost a slow computer more.) */
+const [voices, setVoicesSignal] = createSignal(2);
 const s = {
   root: 36,
-  /** pad notes held, in press order: the last one sings */
-  held: [] as number[],
   /** per held pad: when it went down (s) and the slide it landed on */
   landed: new Map<number, { at: number; y: number }>(),
-  /** what the voice plays now */
+  /** the pitches that sound now, low to high */
+  notes: [] as number[],
+  /** what the newest voice plays now (the one the head shows) */
   pitch: NaN,
   breath: 0,
   bright: 0,
@@ -201,23 +206,47 @@ function setMouth(pos: number) {
 const setVowel = (v: Vowel) => { setMouth(MOUTH.indexOf(v)); showHud('MOUTH', v); };
 const nearVowel = () => { const m = mouth(); if (m === null) return null; const i = Math.round(m); return Math.abs(m - i) < 0.12 ? MOUTH[i] : null; };
 
-/** Play the last held pad: its pitch with the roll, its pressure as breath, its slide as brightness. */
-function apply(app: Engine | null) {
+/** The pad a voice sounds: the last one of those it holds. */
+const padOf = (i: number) => voice?.keys.keys[i]?.at(-1);
+/** This pad is the one its voice sounds. */
+const sounds = (note: number) => { const i = voice?.keys.voiceOf(note); return i !== undefined && padOf(i) === note; };
+
+/** Play each voice's pad: its pitch with the roll, its pressure as breath, its slide as brightness.
+ *  `start`: the voice whose note starts from silence, which goes to its pitch with no glide. */
+function apply(app: Engine | null, start = -1) {
   const v = voice, set = settings();
   if (!v || !set) return;
-  const note = s.held.at(-1), p = note === undefined ? undefined : app?.pads.get(note);
-  if (note === undefined || !p) {
-    s.breath = set.pressure;
-    s.bright = set.brightness;
-    v.setSource({ pressure: s.breath, brightness: s.bright });
-    v.gate(0);
-    return;
+  const newest = v.keys.newest(), notes: number[] = [];
+  for (let i = 0; i < v.keys.count; i++) {
+    const note = padOf(i), p = note === undefined ? undefined : app?.pads.get(note);
+    if (note === undefined || !p) {
+      // no finger: the knobs' own breath and brightness, for the release
+      v.setVoice(i, { pressure: set.pressure, brightness: set.brightness });
+      v.gate(0, i);
+      continue;
+    }
+    const pitch = padPitch(note) + p.x * bendRange();
+    const breath = Math.min(22, set.pressure * (1 + PRESSURE_DEPTH * p.pressure));
+    const bright = clamp(set.brightness + (p.y - (s.landed.get(note)?.y ?? p.y)) * SLIDE_DEPTH, 0, 1);
+    v.setVoice(i, { f0: midiHz(pitch), pressure: breath, brightness: bright }, i === start);
+    v.gate(1, i);
+    notes.push(pitch);
+    if (i === newest) { s.pitch = pitch; s.breath = breath; s.bright = bright; }
   }
-  s.pitch = padPitch(note) + p.x * bendRange();
-  s.breath = Math.min(22, set.pressure * (1 + PRESSURE_DEPTH * p.pressure));
-  s.bright = clamp(set.brightness + (p.y - (s.landed.get(note)?.y ?? p.y)) * SLIDE_DEPTH, 0, 1);
-  v.setSource({ f0: midiHz(s.pitch), pressure: s.breath, brightness: s.bright });
-  v.gate(1);
+  s.notes = notes.sort((a, b) => a - b);
+  if (newest === null) { s.breath = set.pressure; s.bright = set.brightness; }
+  else v.showVoice(newest); // the head shows the newest note's voice, then its release
+}
+
+/** How many voices play. The pads still down are let go: a voice taken away would keep its pad. */
+function setVoices(n: number) {
+  n = clamp(Math.round(n), 1, MAX_VOICES);
+  showHud('VOICES', `${n}`);
+  if (n === voices()) return;
+  setVoicesSignal(n);
+  s.landed.clear();
+  voice?.setVoices(n);
+  apply(current);
 }
 
 // ── sound on/off, as in Expression ──
@@ -244,8 +273,10 @@ const onGesture = (ev: Event) => {
 const HEAD_W = 236, INFO_X = 248, RIGHT_X = 456, RIGHT_W = 496;
 
 function drawInfo(g: CanvasRenderingContext2D) {
-  const x = INFO_X, w = 196, sounding = s.held.length > 0, r = voice?.readout();
-  text(g, Number.isNaN(s.pitch) ? '·' : noteName(s.pitch), x, 26, { size: 32, weight: 700, align: 'left', color: sounding ? '#ffffff' : '#5b6672' });
+  const x = INFO_X, w = 196, sounding = s.notes.length > 0, r = voice?.readout();
+  // a chord's notes, low to high, smaller the more there are; with no pad down, the last note
+  const names = sounding ? s.notes.map(noteName).join(' ') : Number.isNaN(s.pitch) ? '·' : noteName(s.pitch);
+  text(g, names, x, 26, { size: [32, 32, 26, 20, 16][s.notes.length] ?? 16, weight: 700, align: 'left', color: sounding ? '#ffffff' : '#5b6672' });
   const hz = r && r.voicing > 0.2 ? r.f0 : Number.isNaN(s.pitch) ? NaN : midiHz(s.pitch);
   const cents = Number.isNaN(hz) || Number.isNaN(s.pitch) ? 0 : Math.round((hzMidi(hz) - Math.round(s.pitch)) * 100);
   text(g, Number.isNaN(hz) ? 'f0 ---' : `${hz.toFixed(1)} Hz`, x, 56, { size: 13, align: 'left', font: MONO, color: '#c8d0d8' });
@@ -295,6 +326,7 @@ function drawSpectrum(g: CanvasRenderingContext2D) {
 function drawKnobs(g: CanvasRenderingContext2D) {
   const cw = RIGHT_W / 8, y = 76, knobs = page(current);
   text(g, voicePage(current) ? 'VOICE (SHIFT)' : 'THROAT · SHIFT: VOICE', RIGHT_X + RIGHT_W, y - 1, { size: 8, weight: 700, align: 'right', font: MONO, color: '#4b5560' });
+  text(g, `VOICES ${voices()} · PAGE < >`, RIGHT_X + 2, y - 1, { size: 8, weight: 700, align: 'left', font: MONO, color: '#4b5560' });
   knobs.forEach((k, i) => {
     const x = RIGHT_X + i * cw, v = k.get(), on = current?.touched.has(k.id);
     text(g, k.short, x + 2, y + 10, { size: 9, weight: 700, align: 'left', font: MONO, color: on ? '#ffffff' : css(rgbOf(k.color), 0.9) });
@@ -360,8 +392,11 @@ export const chimera: Demo = {
         const d = v.defaults;
         setSettings({ pressure: d.pressure, tension: d.tension, brightness: d.brightness, breathiness: d.breathiness, roughness: d.roughness, fry: d.fry, vibratoDepth: d.vibratoDepth, glide: d.glide });
       }
-      // our settings win over the engine's (they survive a tab switch)
-      v.setSource({ ...settings()! });
+      // our settings win over the engine's (they survive a tab switch); breath and brightness
+      // are each voice's own, which apply() sends
+      const { pressure: _breath, brightness: _bright, ...dials } = settings()!;
+      v.setSource(dials);
+      v.setVoices(voices());
       v.setBody(bodyOf(size()), true);
       const a = artic(), m = mouth();
       if (a && m === null) v.setArtic(a);
@@ -375,9 +410,10 @@ export const chimera: Demo = {
         }),
         (off) => Effect.sync(() => {
           off();
-          s.held = [];
           s.landed.clear();
-          v.gate(0);
+          s.notes = [];
+          v.keys.clear();
+          for (let i = 0; i < v.keys.count; i++) v.gate(0, i);
           if (s.sizeTimer) setSize(size(), true);
           // the voice runs a physical model all the time: no CPU for it while another tab plays
           void v.suspend();
@@ -392,12 +428,21 @@ export const chimera: Demo = {
 
   onEvent(ev, app) {
     if (ev.type === 'pad') {
+      const keys = voice?.keys;
+      if (!keys) return; // the engine is still loading
       const now = performance.now() / 1000, land = s.landed.get(ev.note);
-      if (ev.action === 'down') { s.held = [...s.held.filter((n) => n !== ev.note), ev.note]; s.landed.set(ev.note, { at: now, y: 0.5 }); }
-      else if (ev.action === 'up') { s.held = s.held.filter((n) => n !== ev.note); s.landed.delete(ev.note); }
+      let start = -1;
+      if (ev.action === 'down') {
+        const i = keys.pick(ev.note);
+        // a chord's voice that starts from silence starts on its pitch; one voice glides from
+        // its last note, as it did
+        if (keys.count > 1 && !keys.busy(i)) start = i;
+        keys.press(ev.note, i);
+        s.landed.set(ev.note, { at: now, y: 0.5 });
+      } else if (ev.action === 'up') { keys.lift(ev.note); s.landed.delete(ev.note); }
       else if (ev.action === 'slide' && land && now - land.at < SLIDE_LANDING) land.y = ev.y;
-      else if (ev.note !== s.held.at(-1)) return; // only the singing finger shapes the voice
-      apply(app);
+      else if (!sounds(ev.note)) return; // only the finger a voice sounds shapes that voice
+      apply(app, start);
     } else if (ev.type === 'channelPressure') {
       apply(app);
     } else if (ev.type === 'encoder') {
@@ -418,14 +463,15 @@ export const chimera: Demo = {
       if (ev.id === 'lower8') flipSound(); // a Push button is not a page click, so it cannot unblock audio
       if (ev.id === 'octaveDown') { s.root = Math.max(12, s.root - 12); showHud('OCTAVE', noteName(s.root)); }
       if (ev.id === 'octaveUp') { s.root = Math.min(72, s.root + 12); showHud('OCTAVE', noteName(s.root)); }
+      if (ev.id === 'pageLeft') setVoices(voices() - 1);
+      if (ev.id === 'pageRight') setVoices(voices() + 1);
     }
   },
 
   tick(_t, dt, app) {
-    const singing = s.held.at(-1);
     for (let note = 36; note <= 99; note++) {
       const pitch = padPitch(note), p = app.pads.get(note);
-      app.leds.pad(note, note === singing && p ? hsv(195 - p.pressure * 150, 1 - Math.abs(p.x) * 0.4, 0.35 + 0.65 * p.pressure) : p?.down ? [40, 60, 80] : pitch % 12 === 0 ? [0, 90, 255] : inScale(pitch) ? [36, 36, 36] : null);
+      app.leds.pad(note, p && sounds(note) ? hsv(195 - p.pressure * 150, 1 - Math.abs(p.x) * 0.4, 0.35 + 0.65 * p.pressure) : p?.down ? [40, 60, 80] : pitch % 12 === 0 ? [0, 90, 255] : inScale(pitch) ? [36, 36, 36] : null);
     }
     const near = nearVowel();
     app.leds.button(20, null);
@@ -502,6 +548,11 @@ export const chimera: Demo = {
             <For each={VOWEL_BUTTONS}>{(v) => <button type="button" classList={{ active: nearVowel() === v }} onClick={() => setVowel(v)}>{v}</button>}</For>
             <span class="muted">or the touch strip</span>
           </div>
+          <div class="row">
+            <span class="muted">Voices</span>
+            <For each={Array.from({ length: MAX_VOICES }, (_, i) => i + 1)}>{(n) => <button type="button" classList={{ active: voices() === n }} onClick={() => setVoices(n)}>{n}</button>}</For>
+            <span class="muted">or Page left and right</span>
+          </div>
           <Show when={artic()}>
             <b class="section-label">Throat (knobs)</b>
             <div class="card-box">{sliders(THROAT)}</div>
@@ -519,7 +570,7 @@ export const chimera: Demo = {
             </div>
           </Show>
         </Show>
-        <p class="muted">Pads play one voice in fourths (blue = C); the last pad held sings. Press harder for more breath, roll left/right to bend, slide up/down from where you landed for brightness. Knobs 1-8 move the throat: jaw, tongue, lips, soft palate, larynx and body size; hold Shift for the voice (knob 1 is then the breath at a light touch). The touch strip moves the mouth from U to I; lower buttons 3-7 jump to A E I O U, 8 turns the sound on and off. The Octave buttons shift the pads.</p>
+        <p class="muted">Pads play in fourths (blue = C). Each pad held sings with a voice of its own, up to the number of Voices (1 to {MAX_VOICES}: the Page left and right buttons); with more pads than voices, the oldest voice takes the new pad. Each finger shapes its own voice: press harder for more breath, roll left/right to bend, slide up/down from where you landed for brightness. Knobs 1-8 move the throat: jaw, tongue, lips, soft palate, larynx and body size; hold Shift for the voice (knob 1 is then the breath at a light touch). The touch strip moves the mouth from U to I; lower buttons 3-7 jump to A E I O U, 8 turns the sound on and off. The Octave buttons shift the pads.</p>
       </>
     );
   },

@@ -1,11 +1,12 @@
-// Our glue around the upstream CHIMERA modules: one voice played by hand (we send `setSource`,
-// `setArtic` and `gate` ourselves, as CHIMERA's store does for its keyboard and its head's
-// handles; pressure and brightness glide in our worklet, see worklet.ts) and CHIMERA's 2D head.
+// Our glue around the upstream CHIMERA modules: a voice, or the voices of a chord, played by hand
+// (we send the dials, each voice's note, `setArtic` and `gate` ourselves, as CHIMERA's store does
+// for its keyboard and its head's handles; pressure and brightness glide in our worklet, see
+// worklet.ts) and CHIMERA's 2D head.
 // The head's per-frame code follows upstream/src/ui/components/AnatomyView.tsx (not copied: it is
 // React), without the dragging and the readouts.
 // Import this module only after initChimera() has resolved (see index.ts).
-import type { Chimera, Head, Readout, VoiceSettings } from './api.ts';
-import { ARTIC_KEYS, MOUTH, type ArticKey, type Articulation, type BodyMix, type HandleId } from './settings.ts';
+import type { Chimera, Head, Readout, VoiceDials, VoiceSettings } from './api.ts';
+import { ARTIC_KEYS, MAX_VOICES, MOUTH, type ArticKey, type Articulation, type BodyMix, type HandleId } from './settings.ts';
 import { VoiceEngine } from './engine.ts';
 import { ARTIC_SPECS, DEFAULT_SOURCE, NEUTRAL, restTip, type HumanArtic } from '../upstream/src/wasm/engine.ts';
 import { VoiceModel } from '../upstream/src/ui/analysis.ts';
@@ -13,6 +14,7 @@ import { PRESETS, bodyKey, defaultF0, sameBody } from '../upstream/src/ui/body.t
 import { AnatomyRenderer, type ViewFlags } from '../upstream/src/ui/render/anatomy.ts';
 import { VIEW } from '../upstream/src/ui/render/profile.ts';
 import { Glow } from '../upstream/src/ui/render/vector.ts';
+import { VoiceAlloc } from '../upstream/src/ui/voiceAlloc.ts';
 import type { TelemetryMessage } from '../upstream/src/worklet/protocol.ts';
 
 /** The calibrated vowel behind each mouth position (IPA): "A" is the open back vowel of "hod". */
@@ -23,6 +25,8 @@ const VIEW_FLAGS: ViewFlags = { pressure: true, particles: true, grid: false, ca
  *  face for readouts). Measured on the adult male profile, the largest: x -8.8 .. 9.3 cm. */
 const BOX = { x0: -9.0, x1: 9.4, y0: VIEW.y0, y1: VIEW.y1 };
 const SOURCE_KEYS = ['f0', 'pressure', 'tension', 'brightness', 'breathiness', 'roughness', 'fry', 'vibratoDepth', 'glide'] as const;
+const DIAL_KEYS = ['tension', 'breathiness', 'roughness', 'fry', 'vibratoDepth', 'glide'] as const;
+const EXPR_KEYS = ['pressure', 'brightness'] as const;
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
@@ -30,8 +34,13 @@ export function createChimera(): Chimera {
   const engine = new VoiceEngine();
   /** the body the voice has, and the one the head shows (ahead of it while a size is chosen) */
   let body: BodyMix = PRESETS.male, shown: BodyMix = PRESETS.male;
-  const source: VoiceSettings = { ...pick(DEFAULT_SOURCE), f0: defaultF0(body) };
-  let gateLevel = 0;
+  /** what every voice shares */
+  const dials = Object.fromEntries(DIAL_KEYS.map((k) => [k, DEFAULT_SOURCE[k]])) as VoiceDials;
+  const alloc = new VoiceAlloc();
+  /** each voice's own note and breath, as asked for (NaN: never set, the engine has its own) */
+  const fresh = () => ({ f0: NaN, pressure: NaN, brightness: NaN, gate: 0 });
+  const notes = Array.from({ length: MAX_VOICES }, fresh);
+  let shownVoice = 0;
   /** the articulation we asked for (tip free: it rests on the tongue body) */
   let artic: HumanArtic = withTip({ ...NEUTRAL });
   const runningFns = new Set<(running: boolean) => void>();
@@ -71,11 +80,18 @@ export function createChimera(): Chimera {
 
   /** Send the voice again: messages sent before the worklet exists are lost. */
   const resync = () => {
-    const { pressure, brightness, ...rest } = source;
-    engine.setSource(rest);
-    engine.setExpression({ pressure, brightness });
+    engine.setVoices(alloc.count);
+    engine.setSource(dials);
     engine.setArtic(artic, true);
-    engine.gate(gateLevel);
+    for (let v = 0; v < alloc.count; v++) {
+      const n = notes[v]!;
+      // (a chord's sounding voice at once: after a new body its engine is at that body's own pitch)
+      if (!Number.isNaN(n.f0)) engine.setPitch(v, n.f0, alloc.count > 1 && n.gate > 0);
+      const expr = Object.fromEntries(EXPR_KEYS.filter((k) => !Number.isNaN(n[k])).map((k) => [k, n[k]]));
+      if (Object.keys(expr).length) engine.setExpression(v, expr);
+      engine.gate(n.gate, v);
+    }
+    engine.showVoice(shownVoice);
   };
   // The worklet says "ready" when it starts and again after each body change, so
   // the body is sent only on the first one: sending it on each would never end.
@@ -108,17 +124,42 @@ export function createChimera(): Chimera {
       runningFns.add(fn);
       return () => runningFns.delete(fn);
     },
-    setSource(values) {
-      Object.assign(source, values);
-      // a finger moves these many times a second: the worklet glides to them (see worklet.ts)
-      const { pressure, brightness, ...rest } = values;
-      if (pressure !== undefined || brightness !== undefined) engine.setExpression({ pressure, brightness });
-      if (Object.keys(rest).length) engine.setSource(rest);
+    keys: alloc,
+    setVoices(count) {
+      count = clamp(Math.round(count), 1, MAX_VOICES);
+      if (count === alloc.count) return;
+      // the keys are let go first: a voice taken away would keep its key, and its breath
+      alloc.clear();
+      for (let v = 0; v < alloc.count; v++) voice.gate(0, v);
+      // (and what a voice taken away was sent is forgotten: it gets all of it again when it is back)
+      for (let v = count; v < MAX_VOICES; v++) notes[v] = fresh();
+      alloc.count = count;
+      if (shownVoice >= count) shownVoice = 0; // as the worklet does
+      engine.setVoices(count);
     },
-    gate(level) {
-      if (level === gateLevel) return;
-      gateLevel = level;
-      engine.gate(level);
+    setSource(values) {
+      for (const k of DIAL_KEYS) if (values[k] !== undefined) dials[k] = values[k];
+      engine.setSource(values);
+    },
+    setVoice(v, values, start = false) {
+      const n = notes[v];
+      if (!n || v >= alloc.count) return;
+      if (values.f0 !== undefined && (start || values.f0 !== n.f0)) engine.setPitch(v, (n.f0 = values.f0), start);
+      // a finger moves these many times a second: the worklet glides to them (see worklet.ts)
+      const expr: { pressure?: number; brightness?: number } = {};
+      for (const k of EXPR_KEYS) if (values[k] !== undefined && values[k] !== n[k]) expr[k] = n[k] = values[k];
+      if (Object.keys(expr).length) engine.setExpression(v, expr);
+    },
+    gate(level, v = 0) {
+      const n = notes[v];
+      if (!n || v >= alloc.count || level === n.gate) return;
+      n.gate = level;
+      engine.gate(level, v);
+    },
+    showVoice(v) {
+      if (v === shownVoice || v < 0 || v >= alloc.count) return;
+      shownVoice = v;
+      engine.showVoice(v);
     },
     articulation: () => Object.fromEntries(ARTIC_KEYS.map((k) => [k, artic[k]])) as Articulation,
     setArtic(values) {
@@ -135,7 +176,8 @@ export function createChimera(): Chimera {
     },
     readout(): Readout | null {
       const t = engine.latest && engine.running ? engine.latest : null;
-      return t ? { f0: t.t.f0, voicing: t.t.voicing, pLung: t.t.pLung, outRms: t.t.outRms, load: t.load } : null;
+      // (with one voice the worklet sends no list of voices: the telemetry is that voice's)
+      return t ? { f0: t.t.f0, voicing: t.t.voicing, pLung: t.t.pLung, outRms: t.t.outRms, load: t.load, voices: t.voices ?? [{ f0: t.t.f0, voicing: t.t.voicing }] } : null;
     },
     spectrum: (() => {
       let bins: Float32Array<ArrayBuffer> | null = null;

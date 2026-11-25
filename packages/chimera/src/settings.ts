@@ -5,6 +5,10 @@
 export const MOUTH = ['U', 'O', 'A', 'E', 'I'] as const;
 export type Vowel = (typeof MOUTH)[number];
 
+/** The most voices of a chord. CHIMERA's web app stops here too: each voice is a whole engine,
+ *  about 15% of one core of an Apple silicon Mac. */
+export const MAX_VOICES = 4;
+
 /** The articulators a player moves (CHIMERA's names; the tongue tip follows the tongue body). */
 export const ARTIC_KEYS = ['jaw', 'tbX', 'tbY', 'lipAp', 'lipProt', 'velum', 'larynx'] as const;
 export type ArticKey = (typeof ARTIC_KEYS)[number];
