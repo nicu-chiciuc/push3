@@ -3,7 +3,7 @@
   "fqn": "Site",
   "logicalId": "Site",
   "instanceId": "877cb0ff11139d57b4102915dd3e631c",
-  "downstream": [],
+  "resourceType": "Cloudflare.Worker",
   "props": {
     "name": "push3-twin-pr-2",
     "assets": {
@@ -20,8 +20,8 @@
     "isExternal": true
   },
   "providerVersion": 0,
-  "resourceType": "Cloudflare.Worker",
   "bindings": [],
+  "downstream": [],
   "removalPolicy": "destroy",
   "providerMode": "live"
 }
