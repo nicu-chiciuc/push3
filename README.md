@@ -96,7 +96,7 @@ apps/twin/src/           Browser: Vite + Solid
 
 | Tab | Shows off |
 |---|---|
-| Chimera | A physical model of the human voice that sings from the pads (MPE: pressure = breath, roll = pitch, slide = brightness), with its head, cut through the middle, on the Push screen. Knobs move the throat (jaw, tongue, lips, soft palate, larynx, body size); Shift + knobs shape the voice; the touch strip moves the mouth. The tab every load opens on. [CHIMERA](https://github.com/jamesondh/chimera-vocal-synth) by Jameson Hodge (MIT), pinned in [`packages/chimera`](packages/chimera) |
+| Chimera | A physical model of the human voice that sings chords from the pads: each pad held has a voice of its own (1 to 4 voices, the Page buttons), and each finger shapes its own voice (MPE: pressure = breath, roll = pitch, slide = brightness). Its head, cut through the middle, is on the Push screen. Knobs move the throat (jaw, tongue, lips, soft palate, larynx, body size); Shift + knobs shape the voice; the touch strip moves the mouth. The tab every load opens on. [CHIMERA](https://github.com/jamesondh/chimera-vocal-synth) by Jameson Hodge (MIT), pinned in [`packages/chimera`](packages/chimera) |
 | Video | A film on the Push screen beside a live effects deck: speed, pitch, voice size, DJ filter, echo, drive, visual effects, framings, subtitles; pads trigger gags |
 | Explore | Every control mirrored. Velocity-colored pads, knob gauges on the screen |
 | Paint | Pads as an 8×8 canvas; knobs = hue/sat/brightness |

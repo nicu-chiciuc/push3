@@ -8,6 +8,8 @@ import { chimeraModule } from '../upstream/src/wasm/chimera.ts';
 import type { FromWorklet, TelemetryMessage, ToWorklet } from '../upstream/src/worklet/protocol.ts';
 import type { BodyMix, HumanArtic, VoiceSource } from '../upstream/src/wasm/types.ts';
 
+type Expression = Omit<ExprMessage, 'type' | 'voice'>;
+
 export class VoiceEngine {
   ctx: AudioContext | null = null;
   analyser: AnalyserNode | null = null;
@@ -15,7 +17,8 @@ export class VoiceEngine {
   sampleRate = 48000;
   private node: AudioWorkletNode | null = null;
   private readonly readyFns = new Set<() => void>();
-  private pending: { source?: Partial<VoiceSource>; artic?: Partial<HumanArtic>; tipFree?: boolean; expr?: Omit<ExprMessage, 'type'> } = {};
+  /** `pitch` and `expr` are each voice's own, by its number */
+  private pending: { source?: Partial<VoiceSource>; artic?: Partial<HumanArtic>; tipFree?: boolean; pitch?: Map<number, number>; expr?: Map<number, Expression> } = {};
   private flushing = false;
 
   get running(): boolean {
@@ -64,11 +67,35 @@ export class VoiceEngine {
     this.send({ type: 'body', body });
   }
 
-  gate(level: number): void {
-    this.send({ type: 'gate', level });
+  /** How many voices play: a chord's notes, one voice each. */
+  setVoices(count: number): void {
+    this.send({ type: 'voices', count });
   }
 
-  /** Coalesced, as the following two: many calls in a frame become one message. */
+  /** The voice whose telemetry `latest` is of (what the head shows). */
+  showVoice(voice: number): void {
+    this.send({ type: 'show', voice });
+  }
+
+  /** One voice's breath, on or off. */
+  gate(level: number, voice = 0): void {
+    this.send({ type: 'gate', level, voice });
+  }
+
+  /** One voice's pitch: it glides there, a call a frame at most. With `snap` it is there at once,
+   *  with no glide, and the message goes now (a note that starts from silence: the gate follows it). */
+  setPitch(voice: number, f0: number, snap = false): void {
+    if (snap) {
+      this.pending.pitch?.delete(voice);
+      this.send({ type: 'source', values: { f0 }, voice, snap });
+      return;
+    }
+    (this.pending.pitch ??= new Map()).set(voice, f0);
+    this.flushSoon();
+  }
+
+  /** What every voice shares (the dials; never a pitch, which is each voice's own: see setPitch).
+   *  Coalesced, as the following two: many calls in a frame become one message. */
   setSource(values: Partial<VoiceSource>): void {
     this.pending.source = { ...this.pending.source, ...values };
     this.flushSoon();
@@ -80,9 +107,10 @@ export class VoiceEngine {
     this.flushSoon();
   }
 
-  /** Pressure and brightness targets: the worklet glides to them. */
-  setExpression(values: Omit<ExprMessage, 'type'>): void {
-    this.pending.expr = { ...this.pending.expr, ...values };
+  /** One voice's pressure and brightness targets: the worklet glides to them. */
+  setExpression(voice: number, values: Expression): void {
+    const expr = (this.pending.expr ??= new Map());
+    expr.set(voice, { ...expr.get(voice), ...values });
     this.flushSoon();
   }
 
@@ -95,7 +123,8 @@ export class VoiceEngine {
       this.pending = {};
       if (p.artic || p.tipFree !== undefined) this.send({ type: 'artic', values: p.artic ?? {}, tipFree: p.tipFree });
       if (p.source) this.send({ type: 'source', values: p.source });
-      if (p.expr) this.send({ type: 'expr', ...p.expr });
+      for (const [voice, f0] of p.pitch ?? []) this.send({ type: 'source', values: { f0 }, voice });
+      for (const [voice, values] of p.expr ?? []) this.send({ type: 'expr', voice, ...values });
     });
   }
 }
