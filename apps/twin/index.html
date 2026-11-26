@@ -21,9 +21,62 @@
     <meta name="twitter:title" content="Push 3 Twin" />
     <meta name="twitter:description" content="Play movies, a singing head and games on the Ableton Push 3, from your browser. A 3D twin of the Push lets you try it without one." />
     <meta name="twitter:image" content="https://push.tsx.md/og.png" />
+    <style>
+      /* The load screen: drawn before any script runs, so the page is never blank. src/boot.ts
+         moves it into the 3D stage when the page is up and fades it out at the twin's first frame. */
+      html, body { background: #07080a; }
+      #boot {
+        position: fixed; inset: 0; z-index: 50;
+        display: grid; place-items: center;
+        background: #07080a; color: #eff1f5;
+        font: 13.5px/1.48 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue", Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        transition: opacity 0.45s ease;
+      }
+      #boot.in-stage { position: absolute; z-index: 5; }
+      #boot.in-stage .boot-name { display: none; }
+      #boot.gone { opacity: 0; pointer-events: none; }
+      .boot-box {
+        display: flex; flex-direction: column; align-items: center; gap: 20px;
+        animation: boot-in 0.4s ease 0.12s both; /* a fast load shows no flash of it */
+      }
+      .boot-pads { display: grid; grid-template-columns: repeat(8, 14px); gap: 5px; }
+      .boot-pads i {
+        width: 14px; height: 14px; border-radius: 3.5px;
+        background: var(--c); opacity: 0.13; will-change: opacity;
+        animation: boot-wave 1.9s ease-in-out infinite;
+        animation-delay: calc(var(--d) * 65ms);
+      }
+      .boot-name { display: flex; align-items: baseline; gap: 8px; }
+      .boot-name b { font-weight: 650; font-size: 15px; letter-spacing: -0.01em; }
+      .boot-name span { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: #787e8c; }
+      #boot-status { color: #787e8c; font-size: 12.5px; min-height: 1.5em; max-width: 440px; padding: 0 16px; text-align: center; }
+      #boot.failed .boot-pads i { animation: none; }
+      #boot.failed #boot-status { color: #ffb347; }
+      @keyframes boot-wave { 0%, 58%, 100% { opacity: 0.13; } 20% { opacity: 1; } }
+      @keyframes boot-in { from { opacity: 0; } }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-pads i { animation: none; opacity: 0.6; }
+        .boot-box { animation: none; }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <div id="boot" role="status" aria-live="polite">
+      <div class="boot-box">
+        <div class="boot-pads" aria-hidden="true"></div>
+        <div class="boot-name"><b>Push 3</b><span>Twin</span></div>
+        <div id="boot-status">Loading</div>
+      </div>
+    </div>
+    <script>
+      // 64 pads, colored along the diagonal; a wave of light runs across them while the page loads
+      (function () {
+        var c = ['#00c9f0','#3abcf9','#6bb2ff','#7eadff','#96a5ff','#b29cff','#c297fe','#cf92fd','#d98ff3','#e58be5','#f386cd','#fb82ba','#fe81ab','#ff8585','#ff8b58'], g = document.querySelector('#boot .boot-pads');
+        for (var i = 0; i < 64; i++) { var p = document.createElement('i'), d = (i & 7) + (i >> 3); p.style.cssText = '--c:' + c[d] + ';--d:' + d; g.appendChild(p); }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

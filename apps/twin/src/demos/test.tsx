@@ -50,7 +50,7 @@ export const test: Demo = {
     }
     for (const e of ENCODERS) {
       const turned = app.seen.has(`enc:${e.id}`), touched = app.seen.has(`touch:${e.id}`);
-      app.twin.markEncoder(e.id, turned && touched ? 0x3ddc84 : turned || touched ? 0xffd166 : 0xff8a3d);
+      app.markEncoder(e.id, turned && touched ? 0x3ddc84 : turned || touched ? 0xffd166 : 0xff8a3d);
     }
     const pulse = 1 + Math.round(Math.sin(t * 3) + 1);
     app.leds.setStrip(Array.from({ length: 31 }, (_, i) => (allOn ? 7 : app.touched.has('strip') && Math.abs(i - app.strip * 30) < 1.5 ? 7 : pulse)));

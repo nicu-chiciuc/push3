@@ -13,6 +13,7 @@ import { DEVICE, DISPLAY, GROOVES, KEY_HEIGHT, KEYS, KNOBS, PADS, PANELS, STRIP,
 import { legendTexture } from './twin/labels.ts';
 import { knob, roundedPoly, roundedRect, slab } from './twin/shapes.ts';
 import { contactShadowTexture, grainOver, grainTexture, padGlowTexture, woodTexture } from './twin/textures.ts';
+import { DESK_MM } from './twin/wood.ts';
 
 export type View = 'angled' | 'top';
 type Ctrl = { kind: 'pad'; note: number } | { kind: 'button'; cc: number; id: string; label: string } | { kind: 'encoder'; id: string } | { kind: 'strip' };
@@ -82,7 +83,15 @@ export class Twin {
   private padSpill!: THREE.PointLight;
   private readonly grain: THREE.Texture;
 
-  constructor(container: HTMLElement, screenCanvas: HTMLCanvasElement) {
+  /** Build the twin in `container`. It gives the page a turn between the larger steps, and tells
+   *  `status` what it does (for the load screen). */
+  static async create(container: HTMLElement, screenCanvas: HTMLCanvasElement, status: (step: string) => void): Promise<Twin> {
+    const twin = new Twin(container);
+    await twin.#init(screenCanvas, status);
+    return twin;
+  }
+
+  private constructor(container: HTMLElement) {
     this.container = container;
     this.grain = grainTexture();
     // The keys are soft-touch silicone: very matte, with a faint velvet sheen at grazing angles.
@@ -90,7 +99,6 @@ export class Twin {
       color: 0x17181a, roughness: 0.86, metalness: 0, roughnessMap: this.grain,
       sheen: 0.25, sheenRoughness: 0.8, sheenColor: new THREE.Color(0x4c4f55),
     });
-    this.#init(screenCanvas);
   }
 
   on(fn: (ev: PushEvent) => void) { this.listeners.add(fn); }
@@ -105,7 +113,10 @@ export class Twin {
   }
   #emit(ev: PushEvent) { ev.virtual = true; for (const fn of this.listeners) fn(ev); }
 
-  #init(screenCanvas: HTMLCanvasElement) {
+  async #init(screenCanvas: HTMLCanvasElement, status: (step: string) => void) {
+    // a task boundary: the browser may paint the load screen and handle input between the steps
+    const pause = () => new Promise<void>((r) => setTimeout(r, 0));
+    status('Building the 3D Push');
     const r = (this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' }));
     r.setPixelRatio(Math.min(devicePixelRatio, 2));
     r.shadowMap.enabled = true;
@@ -149,7 +160,6 @@ export class Twin {
     rim.position.set(6, 5, -9);
     scene.add(rim);
 
-    this.#buildDesk();
     this.padSpill = new THREE.PointLight(0xffffff, 0, 220 * MM, 2);
     this.padSpill.position.set(X(PADS.bed.x), 30 * MM, Z(PADS.bed.y));
     scene.add(this.padSpill);
@@ -160,6 +170,10 @@ export class Twin {
     this.#buildKeys();
     this.#buildDisplay(screenCanvas);
     this.#buildStrip();
+    await pause();
+    // last: its texture comes from a worker that started with the page, so it has had the most time
+    status('Laying the walnut desk');
+    this.#buildDesk(await woodTexture());
 
     this.composer = new EffectComposer(r);
     this.composer.addPass(new RenderPass(scene, this.camera));
@@ -171,6 +185,12 @@ export class Twin {
     new ResizeObserver(() => this.resize()).observe(this.container);
     this.resize();
     this.setView('angled', false);
+
+    // Compile the shaders now, in parallel where the GPU driver can (KHR_parallel_shader_compile),
+    // so the first frame does not block the page while they compile.
+    status('Preparing the shaders');
+    await pause();
+    await r.compileAsync(scene, this.camera);
   }
 
   // ───────── geometry ─────────
@@ -178,8 +198,8 @@ export class Twin {
    * An oiled walnut desk under the device. A pool of light falls on it around the device and fades
    * to the dark page at its edges, so the desk has no visible border.
    */
-  #buildDesk() {
-    const deskW = 2600, deskD = 2600, offsetZ = 100; // mm; large enough that the light pool fades to black before the edge even on tall portrait phones
+  #buildDesk(wood: THREE.Texture) {
+    const deskW = DESK_MM, deskD = DESK_MM, offsetZ = 100; // mm; large enough that the light pool fades to black before the edge even on tall portrait phones
     const geo = new THREE.PlaneGeometry(deskW * MM, deskD * MM, 72, 72);
     const pos = geo.getAttribute('position') as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
@@ -193,7 +213,7 @@ export class Twin {
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     const desk = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial({
-      map: woodTexture(deskW, deskD), vertexColors: true, roughness: 0.62, metalness: 0,
+      map: wood, vertexColors: true, roughness: 0.62, metalness: 0,
       // little environment reflection: at grazing angles it would light the desk beyond the pool
       envMapIntensity: 0.12,
     }));

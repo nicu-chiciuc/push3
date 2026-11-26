@@ -176,7 +176,7 @@ const voicePage = (app: Engine | null) => !!app?.held.has('shift');
 const page = (app: Engine | null) => (voicePage(app) ? VOICE : THROAT);
 const knobPos = (k: Knob, v: number) => (k.log ? Math.log(v / k.min) / Math.log(k.max / k.min) : (v - k.min) / (k.max - k.min));
 const rgbOf = (c: number): RGB => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
-const markKnobs = (app: Engine) => { for (const k of page(app)) app.twin.markEncoder(k.id, k.color); };
+const markKnobs = (app: Engine) => { for (const k of page(app)) app.markEncoder(k.id, k.color); };
 
 const pitchOf = (rowFromTop: number, col: number) => s.root + col + (7 - rowFromTop) * 5; // rows in fourths, like Push
 const padPitch = (note: number) => { const i = note - 36; return pitchOf(7 - Math.floor(i / 8), i % 8); };
@@ -365,6 +365,19 @@ function drawHud(g: CanvasRenderingContext2D) {
   g.restore();
 }
 
+/** Where the head will be, while the engine downloads (about 450 kB): three dots that rise in turn. */
+function drawLoading(g: CanvasRenderingContext2D, t: number) {
+  if (status() === 'failed') { text(g, 'No CHIMERA', HEAD_W / 2, 80, { size: 12, color: '#7c8792' }); return; }
+  for (let i = 0; i < 3; i++) {
+    const k = Math.max(0, Math.sin(t * 5 - i * 0.8));
+    g.fillStyle = `rgba(120, 220, 255, ${0.22 + 0.6 * k})`;
+    g.beginPath();
+    g.arc(HEAD_W / 2 - 18 + i * 18, 68 - k * 6, 4, 0, Math.PI * 2);
+    g.fill();
+  }
+  text(g, 'Loading the voice', HEAD_W / 2, 100, { size: 12, color: '#7c8792' });
+}
+
 export const chimera: Demo = {
   id: 'chimera',
   name: 'Chimera',
@@ -497,9 +510,9 @@ export const chimera: Demo = {
     s.hasSpectrum = !!voice && audioRunning() && voice.spectrum(s.spectrum, SPECTRUM_LO, SPECTRUM_HI);
   },
 
-  draw(g) {
+  draw(g, _app, t) {
     if (head) g.drawImage(head.canvas, 0, 0, HEAD_W, 160);
-    else text(g, status() === 'failed' ? 'No CHIMERA' : 'Loading', HEAD_W / 2, 80, { size: 12, color: '#7c8792' });
+    else drawLoading(g, t);
     drawInfo(g);
     drawSpectrum(g);
     drawKnobs(g);
@@ -537,12 +550,16 @@ export const chimera: Demo = {
         <p>
           A physical model of the human voice: lungs, vocal folds and the airway of the throat and mouth, computed sample by sample. <a href="https://github.com/jamesondh/chimera-vocal-synth" target="_blank" rel="noreferrer">CHIMERA</a> by Jameson Hodge (MIT), in Rust compiled to WASM, here played from the Push.
         </p>
-        <canvas ref={(c) => (panelCanvas = c)} class="chimera-head" aria-label="The singing head, cut through the middle" />
+        <div class="chimera-head-box">
+          <canvas ref={(c) => (panelCanvas = c)} class="chimera-head" aria-label="The singing head, cut through the middle" />
+          <Show when={status() === 'loading'}>
+            <div class="chimera-loading" role="status"><span class="dots" aria-hidden="true"><i /><i /><i /></span>Loading the voice</div>
+          </Show>
+        </div>
         <Show when={status() !== 'failed'} fallback={<p class="muted">The engine did not load. Reload the page to try again.</p>}>
           <div class="row">
             <button type="button" data-sound-toggle classList={{ active: soundOn() && audioRunning() }} onClick={toggleSound}>{!soundOn() ? 'Sound off' : audioRunning() ? 'Sound on' : 'Start sound'}</button>
             <Show when={soundOn() && !audioRunning() && status() === 'ready'}><span class="muted">Click anywhere on the page to start the sound (a browser rule).</span></Show>
-            <Show when={status() === 'loading'}><span class="muted">Loading the engine…</span></Show>
           </div>
           <div class="row">
             <For each={VOWEL_BUTTONS}>{(v) => <button type="button" classList={{ active: nearVowel() === v }} onClick={() => setVowel(v)}>{v}</button>}</For>

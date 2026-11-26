@@ -9,6 +9,7 @@ import {
   useSidebarActions,
   useSidebarLayoutPresentation,
 } from 'sidebars-solid';
+import { boot } from '../boot.ts';
 import type { Engine } from '../engine/engine.ts';
 
 const IS_LOCALHOST = ['localhost', '127.0.0.1'].includes(location.hostname);
@@ -400,18 +401,22 @@ const Stage: Component<{
   const e = props.engine;
   const presentation = useSidebarLayoutPresentation();
   let canvasHost!: HTMLDivElement;
+  let stage!: HTMLElement;
 
   createEffect(() => {
     e.setMobileTouch(presentation().isMobile);
   });
 
-  onMount(() => e.mount(canvasHost));
+  onMount(() => {
+    boot.attach(stage);
+    e.mount(canvasHost);
+  });
 
   const isTop = () => e.cameraView() === 'top';
   const toggleView = () => e.setCameraView(isTop() ? 'angled' : 'top');
 
   return (
-    <section id="stage" aria-label="3D model of the Push 3">
+    <section id="stage" ref={stage} aria-label="3D model of the Push 3">
       <div class="stage-canvas" ref={canvasHost} />
 
       <Show when={props.alert}>

@@ -1183,7 +1183,7 @@ export const videoDeck: Demo = {
       yield* Effect.sync(() => {
         window.addEventListener('pointerdown', onGesture, { passive: true });
         window.addEventListener('keydown', onGesture, { passive: true });
-        for (const k of KNOBS) app.twin.markEncoder(k.id, k.color);
+        for (const k of KNOBS) app.markEncoder(k.id, k.color);
       });
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {

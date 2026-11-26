@@ -782,6 +782,35 @@ a.icon-btn.repo-icon {
 }
 
 /* Chimera: the singing head (CHIMERA's 2D view, taller than wide) */
+.chimera-head-box {
+  position: relative;
+  max-width: 320px;
+}
+/* while the engine (about 450 kB) downloads: three dots that rise in turn, over the empty head */
+.chimera-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.chimera-loading .dots { display: flex; gap: 8px; }
+.chimera-loading .dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgb(120, 220, 255);
+  opacity: 0.25;
+  animation: chimera-dot 1.25s ease-in-out infinite;
+}
+.chimera-loading .dots i:nth-child(2) { animation-delay: 0.16s; }
+.chimera-loading .dots i:nth-child(3) { animation-delay: 0.32s; }
+@keyframes chimera-dot { 0%, 60%, 100% { opacity: 0.25; transform: none; } 25% { opacity: 0.85; transform: translateY(-5px); } }
+@media (prefers-reduced-motion: reduce) { .chimera-loading .dots i { animation: none; opacity: 0.6; } }
 .chimera-head {
   display: block;
   width: 100%;

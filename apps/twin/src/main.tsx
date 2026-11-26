@@ -1,3 +1,5 @@
+// First: start making the desk texture in a worker while everything else loads.
+import './engine/twin/wood-job.ts';
 import { render } from 'solid-js/web';
 import { Effect, Layer, Stream, SubscriptionRef } from 'effect';
 import { Engine } from './engine/engine.ts';

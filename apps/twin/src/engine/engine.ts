@@ -6,7 +6,8 @@ import { Effect, Fiber, type Scope } from 'effect';
 import { describe, ENCODERS, hex, PushController, scale, type Bytes, type MidiPort, type PressureMode, type PushEvent, type RGB } from '@push3/protocol';
 import type { LinkKind, LinkStatus } from '@push3/web';
 import { Screen } from './screen.ts';
-import { Twin, type View } from './twin.ts';
+import type { Twin, View } from './twin.ts';
+import { boot } from '../boot.ts';
 
 export interface Demo {
   readonly id: string;
@@ -62,7 +63,12 @@ export class Engine {
   readonly unmapped = new Map<number, number>();
   readonly store = store;
   time = 0;
-  twin!: Twin;
+  /** The 3D twin: null until its code has loaded and its first frame is ready. */
+  twin: Twin | null = null;
+  private mounted = false;
+  /** Colors the demos gave the encoders' rings, kept for the twin when it comes. */
+  private readonly marks = new Map<string, number | null>();
+  private stripHostOn = false;
 
   get strip() { return this.push.strip; }
   get stripHost() { return this.push.stripHost; }
@@ -129,15 +135,43 @@ export class Engine {
 
   get demo(): Demo { return this.demos[this.demoIndex()]!; }
 
-  /** Create the 3D twin in `stage` and start the frame loop. */
+  /** Start the frame loop, and load the 3D twin into `stage`. The demos, the display and a
+   *  connected Push work at once; the twin comes when its code has loaded and its shaders are ready. */
   mount(stage: HTMLElement) {
-    this.twin = new Twin(stage, this.screen.canvas);
-    this.twin.setMobileTouch(this.mobileTouch);
-    this.twin.onCameraMoved((moved) => this.set.cameraMoved(moved));
-    this.leds.onChange((key, s) => this.twin.setLed(key, s));
-    this.twin.on((ev) => this.handle(ev, 'virtual'));
+    this.mounted = true;
     this.activate(this.demo);
     requestAnimationFrame(this.frame);
+    void this.loadTwin(stage);
+  }
+
+  private async loadTwin(stage: HTMLElement) {
+    try {
+      boot.status('Loading the 3D engine');
+      const { Twin } = await import('./twin.ts');
+      const twin = await Twin.create(stage, this.screen.canvas, boot.status);
+      twin.setMobileTouch(this.mobileTouch);
+      if (this.cameraView() !== 'angled') twin.setView(this.cameraView(), false);
+      twin.onCameraMoved((moved) => this.set.cameraMoved(moved));
+      this.leds.onChange((key, s) => twin.setLed(key, s));
+      this.leds.replay((key, s) => twin.setLed(key, s));
+      twin.setStripHost(this.stripHostOn);
+      for (const [id, color] of this.marks) twin.markEncoder(id, color);
+      twin.on((ev) => this.handle(ev, 'virtual'));
+      this.twin = twin;
+      // the next frame draws it: then the load screen fades away
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      boot.done();
+    } catch (err) {
+      console.error(err);
+      const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, '');
+      boot.fail(`The 3D view could not start (${why}). The tabs and a connected Push still work.`);
+    }
+  }
+
+  /** The ring around an encoder on the twin, in a demo's color (null: none). */
+  markEncoder(id: string, color: number | null) {
+    this.marks.set(id, color);
+    this.twin?.markEncoder(id, color);
   }
 
   setCameraView(v: View) {
@@ -168,10 +202,10 @@ export class Engine {
   }
 
   handle(ev: PushEvent, source: 'hw' | 'virtual', raw?: ReadonlyArray<number>) {
-    if (!this.twin) return; // not mounted yet
+    if (!this.mounted) return;
     this.push.apply(ev);
     this.track(ev);
-    this.twin.applyEvent(ev);
+    this.twin?.applyEvent(ev);
     this.logEvent(ev, source, raw);
 
     // Upper display buttons pick the tab (a demo may capture them unless Shift is held).
@@ -201,7 +235,8 @@ export class Engine {
 
   private setStripHost(on: boolean) {
     this.push.setStripHost(on);
-    this.twin.setStripHost(on);
+    this.stripHostOn = on;
+    this.twin?.setStripHost(on);
   }
 
   // ── scoped device modes for demos (acquire on activate, release automatically) ──
@@ -222,7 +257,7 @@ export class Engine {
   private activate(demo: Demo) {
     const prev = this.demoFiber;
     this.leds.clear();
-    for (const e of ENCODERS) this.twin.markEncoder(e.id, null);
+    for (const e of ENCODERS) this.markEncoder(e.id, null);
     const run = demo.activate?.(this) ?? Effect.void;
     // A demo is a fiber: interrupting it closes its scope and runs its finalizers.
     this.demoFiber = Effect.runFork(
@@ -269,7 +304,7 @@ export class Engine {
     this.flushLeds();
     this.screen.draw(this, this.time);
     if (this.status().display && this.screen.shouldSend(now)) this.link?.sendFrame(this.screen.toRGB565());
-    this.twin.render(this.screen.version);
+    this.twin?.render(this.screen.version);
 
     if (this.logBuf.length) {
       const fresh = this.logBuf.reverse();

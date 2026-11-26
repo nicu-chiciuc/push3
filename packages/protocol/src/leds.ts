@@ -46,6 +46,12 @@ export class Leds {
     for (const fn of this.listeners) fn('strip', this.strip);
   }
 
+  /** Each LED that is on, and the strip, to a view that starts after them (the 3D twin loads late). */
+  replay(fn: Listener) {
+    for (const [key, s] of this.state) fn(key, s);
+    fn('strip', this.strip);
+  }
+
   clear() {
     for (const key of this.state.keys()) this.set(key, null);
   }
